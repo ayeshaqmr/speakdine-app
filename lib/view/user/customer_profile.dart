@@ -5,23 +5,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
 
-class RestaurantProfileView extends StatefulWidget {
-  const RestaurantProfileView({super.key});
+class CustomerProfileView extends StatefulWidget {
+  const CustomerProfileView({super.key});
 
   @override
-  State<RestaurantProfileView> createState() =>
-      _RestaurantProfileViewState();
+  State<CustomerProfileView> createState() => _CustomerProfileViewState();
 }
 
-class _RestaurantProfileViewState extends State<RestaurantProfileView> {
+class _CustomerProfileViewState extends State<CustomerProfileView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final user = FirebaseAuth.instance.currentUser;
+  final _user = FirebaseAuth.instance.currentUser;
 
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _descriptionController = TextEditingController();
 
   bool _loading = true;
   bool _saving = false;
@@ -37,22 +34,18 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _addressController.dispose();
-    _descriptionController.dispose();
     super.dispose();
   }
 
   Future<void> _loadProfile() async {
     try {
       final doc =
-          await _firestore.collection('restaurants').doc(user?.uid).get();
+          await _firestore.collection('users').doc(_user?.uid).get();
       if (doc.exists) {
-        final data = doc.data()!;
-        _nameController.text = data['restaurantName'] ?? '';
-        _emailController.text = data['email'] ?? '';
-        _phoneController.text = data['phone'] ?? '';
-        _addressController.text = data['address'] ?? '';
-        _descriptionController.text = data['description'] ?? '';
+        final profile = doc.data()!;
+        _nameController.text = profile['name'] ?? '';
+        _emailController.text = profile['email'] ?? _user?.email ?? '';
+        _phoneController.text = profile['phone'] ?? '';
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
@@ -63,12 +56,10 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
   Future<void> _saveProfile() async {
     setState(() => _saving = true);
     try {
-      await _firestore.collection('restaurants').doc(user?.uid).update({
-        'restaurantName': _nameController.text.trim(),
+      await _firestore.collection('users').doc(_user?.uid).update({
+        'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
-        'address': _addressController.text.trim(),
-        'description': _descriptionController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -101,30 +92,26 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Profile').h4().semiBold(),
-            const Text('Update your restaurant information')
+            const Text('Manage your account details')
                 .muted()
                 .small(),
             const SizedBox(height: 24),
-                  Center(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.muted,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(RadixIcons.home,
-                          size: 36, color: theme.colorScheme.primary),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  _labeledField(
-                      'Restaurant Name', _nameController, 'Restaurant name'),
-                  _labeledField('Email', _emailController, 'Email address'),
-                  _labeledField('Phone', _phoneController, 'Phone number'),
-                  _labeledField('Address', _addressController, 'Address'),
-                  _labeledField('Description', _descriptionController,
-                      'About your place'),
+            Center(
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(RadixIcons.person,
+                    size: 36, color: theme.colorScheme.primary),
+              ),
+            ),
+            const SizedBox(height: 32),
+            _labeledField('Name', _nameController, 'Your name'),
+            _labeledField('Email', _emailController, 'Email address'),
+            _labeledField('Phone', _phoneController, 'Phone number'),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -155,13 +142,13 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(RadixIcons.exit, size: 16,
-                        color: theme.colorScheme.destructive),
+                    Icon(RadixIcons.exit,
+                        size: 16, color: theme.colorScheme.destructive),
                     const SizedBox(width: 8),
                     Text(
                       'Log Out',
-                      style: TextStyle(
-                          color: theme.colorScheme.destructive),
+                      style:
+                          TextStyle(color: theme.colorScheme.destructive),
                     ),
                   ],
                 ),

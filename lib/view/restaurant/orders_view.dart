@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+import 'package:speak_dine/utils/toast_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speak_dine/common/colorExtension.dart';
 
 class OrdersView extends StatefulWidget {
   const OrdersView({super.key});
@@ -16,224 +17,247 @@ class _OrdersViewState extends State<OrdersView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Orders",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: colorExt.primary,
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Orders').h4().semiBold(),
+              const Text('Manage incoming customer orders')
+                  .muted()
+                  .small(),
+            ],
           ),
         ),
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('restaurants')
-            .doc(user?.uid)
-            .collection('orders')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+        const SizedBox(height: 16),
+        Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _firestore
+                      .collection('restaurants')
+                      .doc(user?.uid)
+                      .collection('orders')
+                      .orderBy('createdAt', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return _buildOrdersSkeleton();
+                    }
+                    if (snapshot.hasError) {
+                      debugPrint('[RestaurantOrders] Orders stream error: ${snapshot.error}');
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (context.mounted) {
+                          showAppToast(context, 'Unable to load orders. Please try again.');
+                        }
+                      });
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(RadixIcons.crossCircled,
+                                size: 48,
+                                color: theme.colorScheme.destructive),
+                            const SizedBox(height: 16),
+                            const Text('Unable to load orders').semiBold(),
+                          ],
+                        ),
+                      );
+                    }
+                    if (!snapshot.hasData ||
+                        snapshot.data!.docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(RadixIcons.archive,
+                                size: 48,
+                                color:
+                                    theme.colorScheme.mutedForeground),
+                            const SizedBox(height: 16),
+                            const Text('No orders yet').semiBold(),
+                            const SizedBox(height: 8),
+                            const Text(
+                                    'Orders will appear here when\ncustomers place them')
+                                .muted()
+                                .small(),
+                          ],
+                        ),
+                      );
+                    }
+                    final orders = snapshot.data!.docs;
+                    return ListView.separated(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: orders.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final order = orders[index].data()
+                            as Map<String, dynamic>;
+                        final orderId = orders[index].id;
+                        return _buildOrderCard(theme, order, orderId);
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
+  Widget _buildOrdersSkeleton() {
+    return Skeletonizer(
+      enabled: true,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        children: List.generate(
+          4,
+          (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              padding: const EdgeInsets.all(16),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.shopping_bag_outlined,
-                    size: 80,
-                    color: colorExt.shadow,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Bone.text(words: 2),
+                      const Bone(width: 72, height: 24, borderRadius: BorderRadius.all(Radius.circular(12))),
+                    ],
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    "No orders yet",
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: colorExt.primaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "Orders will appear here when\ncustomers place them",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 16,
-                      color: colorExt.shadow,
-                    ),
-                  ),
+                  const Divider(height: 24),
+                  const Bone.text(words: 3, fontSize: 12),
+                  const SizedBox(height: 8),
+                  const Bone.text(words: 2, fontSize: 12),
+                  const SizedBox(height: 8),
+                  const Bone.text(words: 1),
+                  const SizedBox(height: 16),
+                  const Bone(width: double.infinity, height: 36, borderRadius: BorderRadius.all(Radius.circular(8))),
                 ],
               ),
-            );
-          }
-
-          final orders = snapshot.data!.docs;
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(15),
-            itemCount: orders.length,
-            itemBuilder: (context, index) {
-              final order = orders[index].data() as Map<String, dynamic>;
-              final orderId = orders[index].id;
-
-              return _buildOrderCard(order, orderId);
-            },
-          );
-        },
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildOrderCard(Map<String, dynamic> order, String orderId) {
+  Widget _buildOrderCard(
+      ThemeData theme, Map<String, dynamic> order, String orderId) {
     final status = order['status'] ?? 'pending';
-    final statusColor = _getStatusColor(status);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: colorExt.container,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: colorExt.shadow,
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: theme.colorScheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Order #${orderId.substring(0, 6).toUpperCase()}",
-                style: TextStyle(
-                  fontFamily: 'Metropolis',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: colorExt.primary,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  status.toUpperCase(),
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: statusColor,
-                  ),
-                ),
-              ),
+              Text('Order #${orderId.substring(0, 6).toUpperCase()}')
+                  .semiBold(),
+              _buildStatusBadge(theme, status),
             ],
           ),
-          const Divider(height: 20),
+          const Divider(height: 24),
+          Text('Customer: ${order['customerName'] ?? 'Unknown'}')
+              .muted()
+              .small(),
+          const SizedBox(height: 4),
+          Text('Items: ${order['itemCount'] ?? 0}').muted().small(),
+          const SizedBox(height: 4),
           Text(
-            "Customer: ${order['customerName'] ?? 'Unknown'}",
+            '\$${order['total']?.toStringAsFixed(2) ?? '0.00'}',
             style: TextStyle(
-              fontFamily: 'Metropolis',
-              fontSize: 14,
-              color: colorExt.primaryText,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            "Items: ${order['itemCount'] ?? 0}",
-            style: TextStyle(
-              fontFamily: 'Metropolis',
-              fontSize: 14,
-              color: colorExt.primaryText,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            "Total: \$${order['total']?.toStringAsFixed(2) ?? '0.00'}",
-            style: TextStyle(
-              fontFamily: 'Metropolis',
-              fontSize: 16,
+              color: theme.colorScheme.primary,
               fontWeight: FontWeight.w700,
-              color: colorExt.secondary,
             ),
           ),
-          const SizedBox(height: 15),
-          Row(
-            children: [
-              if (status == 'pending')
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => _updateOrderStatus(orderId, 'preparing'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text("Accept", style: TextStyle(color: Colors.white)),
-                  ),
-                ),
-              if (status == 'preparing') ...[
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => _updateOrderStatus(orderId, 'ready'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text("Ready", style: TextStyle(color: Colors.white)),
-                  ),
-                ),
-              ],
-              if (status == 'ready')
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => _updateOrderStatus(orderId, 'completed'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colorExt.primary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text("Complete", style: TextStyle(color: Colors.white)),
-                  ),
-                ),
-            ],
-          ),
+          const SizedBox(height: 16),
+          _buildActionButtons(theme, orderId, status),
         ],
       ),
     );
   }
 
-  Color _getStatusColor(String status) {
+  Widget _buildStatusBadge(ThemeData theme, String status) {
+    Color bgColor;
+    Color textColor;
     switch (status) {
       case 'pending':
-        return Colors.orange;
+        bgColor = Colors.orange.withAlpha(30);
+        textColor = Colors.orange;
       case 'preparing':
-        return Colors.blue;
+        bgColor = Colors.blue.withAlpha(30);
+        textColor = Colors.blue;
       case 'ready':
-        return Colors.green;
+        bgColor = Colors.green.withAlpha(30);
+        textColor = Colors.green;
       case 'completed':
-        return colorExt.primary;
+        bgColor = theme.colorScheme.primary.withAlpha(30);
+        textColor = theme.colorScheme.primary;
       default:
-        return colorExt.primaryText;
+        bgColor = theme.colorScheme.muted;
+        textColor = theme.colorScheme.mutedForeground;
     }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          color: textColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(
+      ThemeData theme, String orderId, String status) {
+    if (status == 'completed') return const SizedBox.shrink();
+
+    String label;
+    String nextStatus;
+    switch (status) {
+      case 'pending':
+        label = 'Accept';
+        nextStatus = 'preparing';
+      case 'preparing':
+        label = 'Mark Ready';
+        nextStatus = 'ready';
+      case 'ready':
+        label = 'Complete';
+        nextStatus = 'completed';
+      default:
+        return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: PrimaryButton(
+        density: ButtonDensity.compact,
+        onPressed: () => _updateOrderStatus(orderId, nextStatus),
+        child: Text(label),
+      ),
+    );
   }
 
   Future<void> _updateOrderStatus(String orderId, String status) async {
@@ -245,17 +269,11 @@ class _OrdersViewState extends State<OrdersView> {
           .doc(orderId)
           .update({'status': status});
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Order status updated to $status"),
-          backgroundColor: colorExt.primary,
-        ),
-      );
+      if (!mounted) return;
+      showAppToast(context, 'Order status updated to $status');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-      );
+      if (!mounted) return;
+      showAppToast(context, 'Something went wrong. Please try again later.');
     }
   }
 }
-

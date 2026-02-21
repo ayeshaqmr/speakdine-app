@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speak_dine/common/colorExtension.dart';
-import 'package:speak_dine/view/role_select.dart';
+import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/view/authScreens/login_view.dart';
 import 'package:speak_dine/view/user/restaurant_detail.dart';
-import 'package:speak_dine/view/user/cart_view.dart';
-import 'package:speak_dine/services/cart_service.dart';
 
 class UserHomeView extends StatefulWidget {
-  const UserHomeView({super.key});
+  final VoidCallback? onCartChanged;
+  final VoidCallback? onViewCart;
+
+  const UserHomeView({super.key, this.onCartChanged, this.onViewCart});
 
   @override
   State<UserHomeView> createState() => _UserHomeViewState();
@@ -16,7 +18,7 @@ class UserHomeView extends StatefulWidget {
 
 class _UserHomeViewState extends State<UserHomeView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  String userName = "Customer";
+  String userName = 'Customer';
 
   @override
   void initState() {
@@ -28,7 +30,7 @@ class _UserHomeViewState extends State<UserHomeView> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final doc = await _firestore.collection('users').doc(user.uid).get();
-      if (doc.exists) {
+      if (doc.exists && mounted) {
         setState(() {
           userName = doc.data()?['name'] ?? 'Customer';
         });
@@ -38,174 +40,156 @@ class _UserHomeViewState extends State<UserHomeView> {
 
   Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const SelectRoleView()),
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginView()),
       (route) => false,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "SpeakDine",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: colorExt.primary,
-          ),
-        ),
-        actions: [
-          // Cart Button
-          Stack(
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Row(
             children: [
-              IconButton(
-                icon: Icon(Icons.shopping_cart, color: colorExt.primary),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CartView()),
-                  ).then((_) => setState(() {})); // Refresh on return
-                },
-              ),
-              if (cartService.totalItems > 0)
-                Positioned(
-                  right: 6,
-                  top: 6,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      cartService.totalItems.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Hello, $userName').h4().semiBold(),
+                    const Text('What would you like to eat?')
+                        .muted()
+                        .small(),
+                  ],
                 ),
+              ),
+              GhostButton(
+                density: ButtonDensity.icon,
+                onPressed: _logout,
+                child: Icon(RadixIcons.exit,
+                    size: 20, color: theme.colorScheme.primary),
+              ),
             ],
           ),
-          IconButton(
-            icon: Icon(Icons.logout, color: colorExt.primary),
-            onPressed: _logout,
-            tooltip: "Logout",
-          ),
-        ],
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Welcome Header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            margin: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [colorExt.primary, colorExt.secondary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Hello, $userName! 👋",
-                  style: const TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+        ),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: const Text('Restaurants Near You').semiBold(),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore.collection('restaurants').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return _buildRestaurantListSkeleton(theme);
+              }
+              if (snapshot.hasError) {
+                debugPrint('[UserHome] Restaurants stream error: ${snapshot.error}');
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) {
+                    showAppToast(context, 'Unable to load restaurants. Please refresh and try again.');
+                  }
+                });
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(RadixIcons.crossCircled,
+                          size: 48,
+                          color: theme.colorScheme.destructive),
+                      const SizedBox(height: 16),
+                      const Text('Unable to load restaurants').semiBold(),
+                      const SizedBox(height: 8),
+                      const Text('Please refresh and try again')
+                          .muted()
+                          .small(),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  "What would you like to eat today?",
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 16,
-                    color: Colors.white70,
+                );
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(RadixIcons.home,
+                          size: 48,
+                          color: theme.colorScheme.mutedForeground),
+                      const SizedBox(height: 16),
+                      const Text('No restaurants available').muted(),
+                    ],
                   ),
-                ),
-              ],
-            ),
+                );
+              }
+              final restaurants = snapshot.data!.docs;
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: restaurants.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final restaurant =
+                      restaurants[index].data() as Map<String, dynamic>;
+                  final restaurantId = restaurants[index].id;
+                  return _buildRestaurantCard(
+                      theme, restaurant, restaurantId);
+                },
+              );
+            },
           ),
+        ),
+      ],
+    );
+  }
 
-          // Restaurants Title
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              "Restaurants Near You",
-              style: TextStyle(
-                fontFamily: 'Metropolis',
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: colorExt.primary,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Restaurant List
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('restaurants').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
+  Widget _buildRestaurantListSkeleton(ThemeData theme) {
+    return Skeletonizer(
+      enabled: true,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        children: List.generate(
+          5,
+          (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Bone.square(
+                      size: 48,
+                      borderRadius:
+                          BorderRadius.all(Radius.circular(12))),
+                  const SizedBox(width: 16),
+                  Expanded(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.store_outlined, size: 80, color: colorExt.shadow),
-                        const SizedBox(height: 20),
-                        Text(
-                          "No restaurants available",
-                          style: TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontSize: 18,
-                            color: colorExt.primaryText,
-                          ),
-                        ),
+                        const Bone.text(words: 2),
+                        const SizedBox(height: 8),
+                        const Bone.text(words: 4, fontSize: 12),
                       ],
                     ),
-                  );
-                }
-
-                final restaurants = snapshot.data!.docs;
-
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                  itemCount: restaurants.length,
-                  itemBuilder: (context, index) {
-                    final restaurant = restaurants[index].data() as Map<String, dynamic>;
-                    final restaurantId = restaurants[index].id;
-
-                    return _buildRestaurantCard(restaurant, restaurantId);
-                  },
-                );
-              },
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildRestaurantCard(Map<String, dynamic> restaurant, String restaurantId) {
+  Widget _buildRestaurantCard(
+    ThemeData theme,
+    Map<String, dynamic> restaurant,
+    String restaurantId,
+  ) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -214,95 +198,55 @@ class _UserHomeViewState extends State<UserHomeView> {
             builder: (_) => RestaurantDetailView(
               restaurantId: restaurantId,
               restaurantName: restaurant['restaurantName'] ?? 'Restaurant',
+              onCartChanged: () {
+                setState(() {});
+                widget.onCartChanged?.call();
+              },
+              onViewCart: widget.onViewCart,
             ),
           ),
-        ).then((_) => setState(() {})); // Refresh cart count on return
+        ).then((_) {
+          setState(() {});
+          widget.onCartChanged?.call();
+        });
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 15),
-        padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          color: colorExt.container,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colorExt.shadow,
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: theme.colorScheme.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.2),
+          ),
         ),
+        padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            // Restaurant Icon
             Container(
-              width: 70,
-              height: 70,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: colorExt.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(15),
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                Icons.restaurant,
-                color: colorExt.primary,
-                size: 35,
-              ),
+              child: Icon(RadixIcons.home,
+                  color: theme.colorScheme.primary, size: 24),
             ),
-            const SizedBox(width: 15),
-
-            // Restaurant Info
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    restaurant['restaurantName'] ?? 'Restaurant',
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: colorExt.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Icon(Icons.location_on, size: 14, color: colorExt.secondary),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          restaurant['address'] ?? 'No address',
-                          style: TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontSize: 13,
-                            color: colorExt.primaryText,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Icon(Icons.phone, size: 14, color: colorExt.secondary),
-                      const SizedBox(width: 4),
-                      Text(
-                        restaurant['phone'] ?? 'No phone',
-                        style: TextStyle(
-                          fontFamily: 'Metropolis',
-                          fontSize: 13,
-                          color: colorExt.primaryText,
-                        ),
-                      ),
-                    ],
-                  ),
+                  Text(restaurant['restaurantName'] ?? 'Restaurant')
+                      .semiBold(),
+                  const SizedBox(height: 4),
+                  Text(restaurant['address'] ?? 'No address')
+                      .muted()
+                      .small(),
                 ],
               ),
             ),
-
-            // Arrow
-            Icon(Icons.chevron_right, color: colorExt.primary, size: 30),
+            Icon(RadixIcons.chevronRight,
+                size: 20, color: theme.colorScheme.mutedForeground),
           ],
         ),
       ),

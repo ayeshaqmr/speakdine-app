@@ -1,7 +1,39 @@
-import 'package:flutter/material.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:flutter/material.dart' show FloatingActionButton;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speak_dine/common/colorExtension.dart';
+
+const _menuCategories = [
+  'Appetizers',
+  'Bakery',
+  'BBQ & Grills',
+  'Beverages',
+  'Biryani & Rice',
+  'Breakfast',
+  'Burgers',
+  'Chinese',
+  'Desi',
+  'Desserts',
+  'Fast Food',
+  'Healthy',
+  'Italian',
+  'Japanese',
+  'Mexican',
+  'Pasta',
+  'Pizza',
+  'Salads',
+  'Sandwiches',
+  'Seafood',
+  'Sides',
+  'Soups',
+  'Steaks',
+  'Sushi',
+  'Thai',
+  'Wraps',
+  'Other',
+];
 
 class MenuManagementView extends StatefulWidget {
   const MenuManagementView({super.key});
@@ -16,319 +48,401 @@ class _MenuManagementViewState extends State<MenuManagementView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Manage Menu",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: colorExt.primary,
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddItemDialog(),
-        backgroundColor: colorExt.primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: Text(
-          "Add Item",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('restaurants')
-            .doc(user?.uid)
-            .collection('menu')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
+    final theme = Theme.of(context);
+    return Stack(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.menu_book_outlined,
-                    size: 80,
-                    color: colorExt.shadow,
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    "No menu items yet",
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: colorExt.primaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "Tap + to add your first item",
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 16,
-                      color: colorExt.shadow,
+                  const Text('Menu').h4().semiBold(),
+                  const Text('Add, edit, or remove your dishes')
+                      .muted()
+                      .small(),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                      stream: _firestore
+                          .collection('restaurants')
+                          .doc(user?.uid)
+                          .collection('menu')
+                          .orderBy('createdAt', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return _buildMenuSkeleton();
+                        }
+                        if (snapshot.hasError) {
+                          debugPrint('[MenuManagement] Menu stream error: ${snapshot.error}');
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (context.mounted) {
+                              showAppToast(context, 'Unable to load menu. Please try again.');
+                            }
+                          });
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(RadixIcons.crossCircled,
+                                    size: 48,
+                                    color: theme.colorScheme.destructive),
+                                const SizedBox(height: 16),
+                                const Text('Unable to load menu').semiBold(),
+                              ],
+                            ),
+                          );
+                        }
+                        if (!snapshot.hasData ||
+                            snapshot.data!.docs.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(RadixIcons.reader,
+                                    size: 48,
+                                    color:
+                                        theme.colorScheme.mutedForeground),
+                                const SizedBox(height: 16),
+                                const Text('No menu items yet').semiBold(),
+                                const SizedBox(height: 8),
+                                const Text('Tap + to add your first item')
+                                    .muted()
+                                    .small(),
+                              ],
+                            ),
+                          );
+                        }
+                        final items = snapshot.data!.docs;
+                        return ListView.separated(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final item = items[index].data()
+                                as Map<String, dynamic>;
+                            final itemId = items[index].id;
+                            return _buildMenuItem(theme, item, itemId);
+                          },
+                        );
+                      },
                     ),
                   ),
                 ],
               ),
-            );
-          }
+        Positioned(
+          bottom: 20,
+          right: 20,
+          child: FloatingActionButton(
+            onPressed: () => _showAddItemDialog(theme),
+            backgroundColor: theme.colorScheme.primary,
+            child: Icon(Icons.add,
+                color: theme.colorScheme.primaryForeground),
+          ),
+        ),
+      ],
+    );
+  }
 
-          final items = snapshot.data!.docs;
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(15),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index].data() as Map<String, dynamic>;
-              final itemId = items[index].id;
-
-              return _buildMenuItem(item, itemId);
-            },
-          );
-        },
+  Widget _buildMenuSkeleton() {
+    return Skeletonizer(
+      enabled: true,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        children: List.generate(
+          5,
+          (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Bone.text(words: 2),
+                        const SizedBox(height: 8),
+                        const Bone.text(words: 4, fontSize: 12),
+                        const SizedBox(height: 8),
+                        const Bone.text(words: 1),
+                      ],
+                    ),
+                  ),
+                  const Bone.icon(),
+                  const SizedBox(width: 8),
+                  const Bone.icon(),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildMenuItem(Map<String, dynamic> item, String itemId) {
+  Widget _buildMenuItem(
+      ThemeData theme, Map<String, dynamic> item, String itemId) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: colorExt.container,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: colorExt.shadow,
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: theme.colorScheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
       ),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           Container(
-            width: 60,
-            height: 60,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: colorExt.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
-              Icons.fastfood_rounded,
-              color: colorExt.primary,
-              size: 30,
-            ),
+            child: Icon(RadixIcons.reader,
+                size: 18, color: theme.colorScheme.primary),
           ),
-          const SizedBox(width: 15),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(item['name'] ?? 'Item').semiBold(),
+                if (item['description'] != null &&
+                    item['description'].toString().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    item['description'],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ).muted().small(),
+                ],
+                const SizedBox(height: 2),
                 Text(
-                  item['name'] ?? 'Item',
+                  '\$${item['price']?.toStringAsFixed(2) ?? '0.00'}',
                   style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 18,
+                    color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w700,
-                    color: colorExt.primary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item['description'] ?? '',
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 14,
-                    color: colorExt.primaryText,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "\$${item['price']?.toStringAsFixed(2) ?? '0.00'}",
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: colorExt.secondary,
                   ),
                 ),
               ],
             ),
           ),
-          Column(
-            children: [
-              IconButton(
-                icon: Icon(Icons.edit, color: colorExt.secondary),
-                onPressed: () => _showEditItemDialog(item, itemId),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => _deleteItem(itemId),
-              ),
-            ],
+          GhostButton(
+            density: ButtonDensity.icon,
+            onPressed: () => _showEditItemDialog(theme, item, itemId),
+            child: const Icon(RadixIcons.pencil1, size: 16),
+          ),
+          GhostButton(
+            density: ButtonDensity.icon,
+            onPressed: () => _deleteItem(itemId),
+            child: Icon(RadixIcons.trash,
+                size: 16, color: theme.colorScheme.destructive),
           ),
         ],
       ),
     );
   }
 
-  void _showAddItemDialog() {
+  void _showAddItemDialog(ThemeData theme) {
     final nameController = TextEditingController();
     final descController = TextEditingController();
     final priceController = TextEditingController();
-    final categoryController = TextEditingController();
+    String? selectedCategory;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          "Add Menu Item",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontWeight: FontWeight.w700,
-            color: colorExt.primary,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Add Menu Item'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 340,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Name').semiBold().small(),
+                  const SizedBox(height: 6),
+                  TextField(
+                      controller: nameController,
+                      placeholder: const Text('Item name')),
+                  const SizedBox(height: 12),
+                  const Text('Description').semiBold().small(),
+                  const SizedBox(height: 6),
+                  TextField(
+                      controller: descController,
+                      placeholder: const Text('Description')),
+                  const SizedBox(height: 12),
+                  const Text('Price').semiBold().small(),
+                  const SizedBox(height: 6),
+                  TextField(
+                      controller: priceController,
+                      placeholder: const Text('0.00')),
+                  const SizedBox(height: 12),
+                  const Text('Category').semiBold().small(),
+                  const SizedBox(height: 6),
+                  Select<String>(
+                    value: selectedCategory,
+                    onChanged: (value) {
+                      setDialogState(() => selectedCategory = value);
+                    },
+                    itemBuilder: (context, item) => Text(item),
+                    placeholder: const Text('Select a category'),
+                    popupConstraints: const BoxConstraints(maxHeight: 300),
+                    popup: SelectPopup(
+                      searchFilter: (item, query) =>
+                          item.toLowerCase().contains(query.toLowerCase()),
+                      items: SelectItemList(
+                        children: _menuCategories
+                            .map((cat) => SelectItemButton(
+                                  value: cat,
+                                  child: Text(cat),
+                                ))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+          actions: [
+            OutlineButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            PrimaryButton(
+              onPressed: () {
+                _addItem(
+                  nameController.text,
+                  descController.text,
+                  double.tryParse(priceController.text) ?? 0,
+                  selectedCategory ?? '',
+                );
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add'),
+            ),
+          ],
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDialogTextField(nameController, "Item Name", Icons.fastfood),
-              const SizedBox(height: 15),
-              _buildDialogTextField(descController, "Description", Icons.description),
-              const SizedBox(height: 15),
-              _buildDialogTextField(priceController, "Price", Icons.attach_money,
-                  keyboardType: TextInputType.number),
-              const SizedBox(height: 15),
-              _buildDialogTextField(categoryController, "Category (optional)", Icons.category),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Cancel", style: TextStyle(color: colorExt.primaryText)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _addItem(
-                nameController.text,
-                descController.text,
-                double.tryParse(priceController.text) ?? 0,
-                categoryController.text,
-              );
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: colorExt.primary),
-            child: const Text("Add", style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
   }
 
-  void _showEditItemDialog(Map<String, dynamic> item, String itemId) {
+  void _showEditItemDialog(
+      ThemeData theme, Map<String, dynamic> item, String itemId) {
     final nameController = TextEditingController(text: item['name']);
-    final descController = TextEditingController(text: item['description']);
-    final priceController = TextEditingController(text: item['price']?.toString());
-    final categoryController = TextEditingController(text: item['category']);
+    final descController =
+        TextEditingController(text: item['description']);
+    final priceController =
+        TextEditingController(text: item['price']?.toString());
+    String? selectedCategory = item['category'] as String?;
+    if (selectedCategory != null &&
+        selectedCategory.isNotEmpty &&
+        !_menuCategories.contains(selectedCategory)) {
+      selectedCategory = 'Other';
+    }
+    if (selectedCategory?.isEmpty ?? true) selectedCategory = null;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          "Edit Menu Item",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontWeight: FontWeight.w700,
-            color: colorExt.primary,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Edit Menu Item'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 340,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Name').semiBold().small(),
+                  const SizedBox(height: 6),
+                  TextField(
+                      controller: nameController,
+                      placeholder: const Text('Item name')),
+                  const SizedBox(height: 12),
+                  const Text('Description').semiBold().small(),
+                  const SizedBox(height: 6),
+                  TextField(
+                      controller: descController,
+                      placeholder: const Text('Description')),
+                  const SizedBox(height: 12),
+                  const Text('Price').semiBold().small(),
+                  const SizedBox(height: 6),
+                  TextField(
+                      controller: priceController,
+                      placeholder: const Text('0.00')),
+                  const SizedBox(height: 12),
+                  const Text('Category').semiBold().small(),
+                  const SizedBox(height: 6),
+                  Select<String>(
+                    value: selectedCategory,
+                    onChanged: (value) {
+                      setDialogState(() => selectedCategory = value);
+                    },
+                    itemBuilder: (context, item) => Text(item),
+                    placeholder: const Text('Select a category'),
+                    popupConstraints: const BoxConstraints(maxHeight: 300),
+                    popup: SelectPopup(
+                      searchFilter: (item, query) =>
+                          item.toLowerCase().contains(query.toLowerCase()),
+                      items: SelectItemList(
+                        children: _menuCategories
+                            .map((cat) => SelectItemButton(
+                                  value: cat,
+                                  child: Text(cat),
+                                ))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+          actions: [
+            OutlineButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            PrimaryButton(
+              onPressed: () {
+                _updateItem(
+                  itemId,
+                  nameController.text,
+                  descController.text,
+                  double.tryParse(priceController.text) ?? 0,
+                  selectedCategory ?? '',
+                );
+                Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDialogTextField(nameController, "Item Name", Icons.fastfood),
-              const SizedBox(height: 15),
-              _buildDialogTextField(descController, "Description", Icons.description),
-              const SizedBox(height: 15),
-              _buildDialogTextField(priceController, "Price", Icons.attach_money,
-                  keyboardType: TextInputType.number),
-              const SizedBox(height: 15),
-              _buildDialogTextField(categoryController, "Category", Icons.category),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Cancel", style: TextStyle(color: colorExt.primaryText)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _updateItem(
-                itemId,
-                nameController.text,
-                descController.text,
-                double.tryParse(priceController.text) ?? 0,
-                categoryController.text,
-              );
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: colorExt.primary),
-            child: const Text("Save", style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildDialogTextField(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: colorExt.secondary),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorExt.primary, width: 2),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _addItem(String name, String description, double price, String category) async {
+  Future<void> _addItem(
+      String name, String description, double price, String category) async {
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Item name is required"), backgroundColor: Colors.red),
-      );
+      showAppToast(context, 'Item name is required');
       return;
     }
-
     try {
       await _firestore
           .collection('restaurants')
@@ -341,18 +455,16 @@ class _MenuManagementViewState extends State<MenuManagementView> {
         'category': category,
         'createdAt': FieldValue.serverTimestamp(),
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("$name added to menu!"), backgroundColor: colorExt.primary),
-      );
+      if (!mounted) return;
+      showAppToast(context, '$name added to menu');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-      );
+      if (!mounted) return;
+      showAppToast(context, 'Something went wrong. Please try again later.');
     }
   }
 
-  Future<void> _updateItem(String itemId, String name, String description, double price, String category) async {
+  Future<void> _updateItem(String itemId, String name, String description,
+      double price, String category) async {
     try {
       await _firestore
           .collection('restaurants')
@@ -365,32 +477,28 @@ class _MenuManagementViewState extends State<MenuManagementView> {
         'price': price,
         'category': category,
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("$name updated!"), backgroundColor: colorExt.primary),
-      );
+      if (!mounted) return;
+      showAppToast(context, '$name updated');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-      );
+      if (!mounted) return;
+      showAppToast(context, 'Something went wrong. Please try again later.');
     }
   }
 
   Future<void> _deleteItem(String itemId) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Item?"),
-        content: const Text("This action cannot be undone."),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Item?'),
+        content: const Text('This action cannot be undone.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
+          OutlineButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
+          DestructiveButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -404,16 +512,12 @@ class _MenuManagementViewState extends State<MenuManagementView> {
             .collection('menu')
             .doc(itemId)
             .delete();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Item deleted"), backgroundColor: Colors.orange),
-        );
+        if (!mounted) return;
+        showAppToast(context, 'Item deleted');
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
+        if (!mounted) return;
+        showAppToast(context, 'Something went wrong. Please try again later.');
       }
     }
   }
 }
-

@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
-import 'package:speak_dine/view/role_select.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:speak_dine/view/authScreens/login_view.dart';
 
 class SplashView extends StatefulWidget {
   const SplashView({super.key});
@@ -9,48 +9,65 @@ class SplashView extends StatefulWidget {
 }
 
 class _SplashViewState extends State<SplashView>
-with SingleTickerProviderStateMixin {
-
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 3),);
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn),);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
+    );
     _controller.forward();
-    gotoRoleSelectPage();
+    _navigateAfterDelay();
   }
-  void gotoRoleSelectPage() async {
+
+  Future<void> _navigateAfterDelay() async {
     await Future.delayed(const Duration(seconds: 3));
-    selectRoleView();
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginView()),
+    );
   }
-  void selectRoleView(){
-    Navigator.push(context, MaterialPageRoute(builder: (context) => const SelectRoleView()));
-  }
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
-    var media = MediaQuery.of(context).size;
+    final theme = Theme.of(context);
     return Scaffold(
-      body: Stack(
-        alignment: Alignment.center,
-        children: [
-          FadeTransition(
+      child: Container(
+        color: theme.colorScheme.background,
+        child: Center(
+          child: FadeTransition(
             opacity: _fadeAnimation,
-            child: Image.asset(
-              "assets/splash_view.png",
-              width: media.width,
-              height: media.height,
-              fit: BoxFit.cover,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/speakdine_logo.png',
+                  width: 120,
+                  height: 120,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 24),
+                const Text('SpeakDine').h2().semiBold(),
+                const SizedBox(height: 8),
+                const Text('Dine with ease').muted().small(),
+              ],
+            ),
           ),
-          ),
-        ],
+        ),
       ),
     );
   }

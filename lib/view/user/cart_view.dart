@@ -1,11 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:flutter/material.dart' show Icons;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:speak_dine/utils/toast_helper.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speak_dine/common/colorExtension.dart';
 import 'package:speak_dine/services/cart_service.dart';
 
 class CartView extends StatefulWidget {
-  const CartView({super.key});
+  final bool embedded;
+
+  const CartView({super.key, this.embedded = false});
 
   @override
   State<CartView> createState() => _CartViewState();
@@ -16,57 +19,37 @@ class _CartViewState extends State<CartView> {
   bool _placingOrder = false;
 
   void _increaseQuantity(String restaurantId, int index) {
-    setState(() {
-      cartService.increaseQuantity(restaurantId, index);
-    });
+    setState(() => cartService.increaseQuantity(restaurantId, index));
   }
 
   void _decreaseQuantity(String restaurantId, int index) {
-    setState(() {
-      cartService.decreaseQuantity(restaurantId, index);
-    });
-  }
-
-  void _removeItem(String restaurantId, int index) {
-    setState(() {
-      cartService.removeItem(restaurantId, index);
-    });
+    setState(() => cartService.decreaseQuantity(restaurantId, index));
   }
 
   Future<void> _placeOrder() async {
-    if (cartService.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Your cart is empty!"),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
+    if (cartService.isEmpty) return;
 
     setState(() => _placingOrder = true);
 
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("User not logged in");
+      if (user == null) throw Exception('User not logged in');
 
-      // Get user details
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userDoc =
+          await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data() ?? {};
       final customerName = userData['name'] ?? 'Customer';
       final customerPhone = userData['phone'] ?? '';
       final customerEmail = userData['email'] ?? user.email ?? '';
 
-      // Place order for each restaurant
       for (var entry in cartService.cart.entries) {
         final restaurantId = entry.key;
         final items = entry.value;
 
-        // Calculate total for this restaurant
         double restaurantTotal = 0;
         int totalQuantity = 0;
         List<Map<String, dynamic>> orderItems = [];
-        
+
         for (var item in items) {
           final quantity = item['quantity'] ?? 1;
           final itemTotal = (item['price'] ?? 0) * quantity;
@@ -81,7 +64,6 @@ class _CartViewState extends State<CartView> {
           });
         }
 
-        // Create order in restaurant's orders collection
         await _firestore
             .collection('restaurants')
             .doc(restaurantId)
@@ -98,7 +80,6 @@ class _CartViewState extends State<CartView> {
           'createdAt': FieldValue.serverTimestamp(),
         });
 
-        // Also save to user's order history
         await _firestore
             .collection('users')
             .doc(user.uid)
@@ -114,158 +95,269 @@ class _CartViewState extends State<CartView> {
         });
       }
 
-      // Clear cart
-      setState(() {
-        cartService.clearCart();
-      });
+      setState(() => cartService.clearCart());
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("Order placed successfully! 🎉"),
-          backgroundColor: colorExt.primary,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
-      // Go back to home
-      Navigator.pop(context);
-
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error placing order: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (!mounted) return;
+      showAppToast(context, 'Order placed successfully!');
+      if (!widget.embedded) Navigator.pop(context);
+    } catch (_) {
+      if (!mounted) return;
+      showAppToast(
+          context, 'Something went wrong. Please try again later.');
     }
 
-    setState(() => _placingOrder = false);
+    if (mounted) setState(() => _placingOrder = false);
+  }
+
+  void _clearCart() {
+    final theme = Theme.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Cart?'),
+        content: SizedBox(
+          width: 340,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Remove all items from your cart?'),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlineButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [Text('Cancel')],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => cartService.clearCart());
+                        Navigator.pop(ctx);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.destructive,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Clear',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Your Cart",
-          style: TextStyle(
-            fontFamily: 'Metropolis',
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: colorExt.primary,
-          ),
-        ),
-        actions: [
-          if (cartService.isNotEmpty)
-            TextButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text("Clear Cart?"),
-                    content: const Text("Remove all items from your cart?"),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("Cancel"),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          setState(() {
-                            cartService.clearCart();
-                          });
-                          Navigator.pop(context);
-                        },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                        child: const Text("Clear", style: TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              child: const Text(
-                "Clear",
-                style: TextStyle(
-                  fontFamily: 'Metropolis',
-                  color: Colors.red,
-                  fontWeight: FontWeight.w600,
+    final theme = Theme.of(context);
+    final content = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Row(
+            children: [
+              if (!widget.embedded)
+                GhostButton(
+                  density: ButtonDensity.icon,
+                  onPressed: () => Navigator.pop(context),
+                  child: const Icon(RadixIcons.arrowLeft, size: 20),
+                ),
+              if (!widget.embedded) const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Cart').h4().semiBold(),
+                    const Text('Review your items before ordering')
+                        .muted()
+                        .small(),
+                  ],
                 ),
               ),
-            ),
-        ],
-      ),
-      body: cartService.isEmpty
-          ? _buildEmptyCart()
-          : Column(
-              children: [
-                // Cart Items
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(15),
-                    children: cartService.cart.entries.map((entry) {
-                      final restaurantId = entry.key;
-                      final items = entry.value;
-                      final restaurantName = items.isNotEmpty
-                          ? items.first['restaurantName'] ?? 'Restaurant'
-                          : 'Restaurant';
-
-                      return _buildRestaurantSection(restaurantId, restaurantName, items);
-                    }).toList(),
-                  ),
+              if (cartService.isNotEmpty)
+                GhostButton(
+                  density: ButtonDensity.compact,
+                  onPressed: _clearCart,
+                  child: Text(
+                    'Clear',
+                    style: TextStyle(
+                      color: theme.colorScheme.destructive,
+                    ),
+                  ).small(),
                 ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: cartService.isEmpty
+              ? _buildEmptyCart(theme)
+              : ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  children: cartService.cart.entries.map((entry) {
+                    final restaurantId = entry.key;
+                    final items = entry.value;
+                    final restaurantName = items.isNotEmpty
+                        ? items.first['restaurantName'] ?? 'Restaurant'
+                        : 'Restaurant';
+                    return _buildRestaurantSection(
+                        theme, restaurantId, restaurantName, items);
+                  }).toList(),
+                ),
+        ),
+        if (cartService.isNotEmpty) _buildOrderSummary(theme),
+      ],
+    );
 
-                // Order Summary
-                _buildOrderSummary(),
-              ],
-            ),
+    if (widget.embedded) return content;
+
+    return Scaffold(
+      child: Container(
+        color: theme.colorScheme.background,
+        child: SafeArea(child: content),
+      ),
     );
   }
 
-  Widget _buildEmptyCart() {
+  Widget _buildEmptyCart(ThemeData theme) {
     return Center(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.shopping_cart_outlined,
-            size: 100,
-            color: colorExt.shadow,
+          Icon(Icons.shopping_bag_outlined,
+              size: 64, color: theme.colorScheme.mutedForeground),
+          const SizedBox(height: 16),
+          const Text('Your cart is empty').semiBold(),
+          const SizedBox(height: 8),
+          const Text('Add some delicious food!').muted().small(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestaurantSection(
+    ThemeData theme,
+    String restaurantId,
+    String restaurantName,
+    List<Map<String, dynamic>> items,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.2),
           ),
-          const SizedBox(height: 20),
-          Text(
-            "Your cart is empty",
-            style: TextStyle(
-              fontFamily: 'Metropolis',
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-              color: colorExt.primaryText,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            "Add some delicious food!",
-            style: TextStyle(
-              fontFamily: 'Metropolis',
-              fontSize: 16,
-              color: colorExt.shadow,
-            ),
-          ),
-          const SizedBox(height: 30),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: colorExt.primary,
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(RadixIcons.home,
+                      size: 16, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(restaurantName).semiBold(),
+                ],
               ),
             ),
-            child: const Text(
-              "Browse Restaurants",
+            const Divider(height: 1),
+            ...items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              return _buildCartItem(theme, restaurantId, index, item);
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCartItem(
+    ThemeData theme,
+    String restaurantId,
+    int index,
+    Map<String, dynamic> item,
+  ) {
+    final itemTotal = (item['price'] ?? 0) * (item['quantity'] ?? 1);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item['name'] ?? 'Item').semiBold().small(),
+                Text('\$${item['price']?.toStringAsFixed(2) ?? '0.00'} each')
+                    .muted()
+                    .small(),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GhostButton(
+                density: ButtonDensity.icon,
+                onPressed: () => _decreaseQuantity(restaurantId, index),
+                child: Icon(
+                  item['quantity'] > 1
+                      ? RadixIcons.minus
+                      : RadixIcons.trash,
+                  size: 14,
+                  color: item['quantity'] > 1
+                      ? theme.colorScheme.foreground
+                      : theme.colorScheme.destructive,
+                ),
+              ),
+              SizedBox(
+                width: 32,
+                child: Text(
+                  '${item['quantity']}',
+                  textAlign: TextAlign.center,
+                ).semiBold().small(),
+              ),
+              GhostButton(
+                density: ButtonDensity.icon,
+                onPressed: () => _increaseQuantity(restaurantId, index),
+                child: const Icon(RadixIcons.plus, size: 14),
+              ),
+            ],
+          ),
+          SizedBox(
+            width: 64,
+            child: Text(
+              '\$${itemTotal.toStringAsFixed(2)}',
+              textAlign: TextAlign.right,
               style: TextStyle(
-                fontFamily: 'Metropolis',
-                color: Colors.white,
-                fontSize: 16,
+                color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -275,222 +367,54 @@ class _CartViewState extends State<CartView> {
     );
   }
 
-  Widget _buildRestaurantSection(String restaurantId, String restaurantName, List<Map<String, dynamic>> items) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: colorExt.container,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: colorExt.shadow,
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Restaurant Header
-          Container(
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              color: colorExt.primary.withOpacity(0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.restaurant, color: colorExt.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    restaurantName,
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: colorExt.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Items
-          ...items.asMap().entries.map((entry) {
-            final index = entry.key;
-            final item = entry.value;
-            return _buildCartItem(restaurantId, index, item);
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCartItem(String restaurantId, int index, Map<String, dynamic> item) {
-    final itemTotal = (item['price'] ?? 0) * (item['quantity'] ?? 1);
-
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: colorExt.shadow.withOpacity(0.3)),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Item Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item['name'] ?? 'Item',
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: colorExt.primary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "\$${item['price']?.toStringAsFixed(2) ?? '0.00'} each",
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 13,
-                    color: colorExt.primaryText,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Quantity Controls
-          Container(
-            decoration: BoxDecoration(
-              color: colorExt.textfield,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () => _decreaseQuantity(restaurantId, index),
-                  icon: Icon(
-                    item['quantity'] > 1 ? Icons.remove : Icons.delete,
-                    color: item['quantity'] > 1 ? colorExt.primary : Colors.red,
-                    size: 20,
-                  ),
-                  constraints: const BoxConstraints(minWidth: 35, minHeight: 35),
-                ),
-                Text(
-                  "${item['quantity']}",
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: colorExt.primary,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => _increaseQuantity(restaurantId, index),
-                  icon: Icon(Icons.add, color: colorExt.primary, size: 20),
-                  constraints: const BoxConstraints(minWidth: 35, minHeight: 35),
-                ),
-              ],
-            ),
-          ),
-
-          // Item Total
-          SizedBox(
-            width: 70,
-            child: Text(
-              "\$${itemTotal.toStringAsFixed(2)}",
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontFamily: 'Metropolis',
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: colorExt.secondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOrderSummary() {
+  Widget _buildOrderSummary(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colorExt.container,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
-        boxShadow: [
-          BoxShadow(
-            color: colorExt.shadow,
-            blurRadius: 20,
-            offset: const Offset(0, -5),
+        color: theme.colorScheme.card,
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.border),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Total (${cartService.totalItems} items)').muted(),
+              Text(
+                '\$${cartService.totalAmount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: _placingOrder
+                ? Center(
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  )
+                : PrimaryButton(
+                    onPressed: _placeOrder,
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [Text('Place Order')],
+                    ),
+                  ),
           ),
         ],
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Summary Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Total (${cartService.totalItems} items)",
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 16,
-                    color: colorExt.primaryText,
-                  ),
-                ),
-                Text(
-                  "\$${cartService.totalAmount.toStringAsFixed(2)}",
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: colorExt.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 15),
-
-            // Place Order Button
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: _placingOrder ? null : _placeOrder,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorExt.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                ),
-                child: _placingOrder
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        "Place Order",
-                        style: TextStyle(
-                          fontFamily: 'Metropolis',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
