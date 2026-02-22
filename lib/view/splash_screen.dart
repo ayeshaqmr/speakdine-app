@@ -1,5 +1,9 @@
 import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
+import 'package:speak_dine/view/home/customer_shell.dart';
+import 'package:speak_dine/view/home/restaurant_shell.dart';
 
 class SplashView extends StatefulWidget {
   const SplashView({super.key});
@@ -28,12 +32,48 @@ class _SplashViewState extends State<SplashView>
   }
 
   Future<void> _navigateAfterDelay() async {
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginView()),
-    );
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await _routeByRole(user.uid);
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginView()),
+      );
+    }
+  }
+
+  Future<void> _routeByRole(String uid) async {
+    final firestore = FirebaseFirestore.instance;
+
+    final restaurantDoc =
+        await firestore.collection('restaurants').doc(uid).get();
+    if (restaurantDoc.exists && mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const RestaurantShell()),
+      );
+      return;
+    }
+
+    final userDoc = await firestore.collection('users').doc(uid).get();
+    if (userDoc.exists && mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const CustomerShell()),
+      );
+      return;
+    }
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginView()),
+      );
+    }
   }
 
   @override

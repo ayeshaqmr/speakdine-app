@@ -6,6 +6,7 @@
  *   STRIPE_SECRET_KEY, APP_BASE_URL, PORT
  */
 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
@@ -61,7 +62,8 @@ app.post('/create-customer', async (req, res) => {
  */
 app.post('/create-checkout-session', async (req, res) => {
   try {
-    const { customerId, items, orderId, currency } = req.body;
+    const { customerId, items, orderId, currency, appBaseUrl } = req.body;
+    const baseUrl = appBaseUrl || APP_BASE_URL;
 
     if (!items || !items.length || !orderId) {
       return res.status(400).json({ error: 'items and orderId are required' });
@@ -79,8 +81,8 @@ app.post('/create-checkout-session', async (req, res) => {
     const sessionParams = {
       mode: 'payment',
       line_items: lineItems,
-      success_url: `${APP_BASE_URL}/#/payment-success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
-      cancel_url: `${APP_BASE_URL}/#/payment-cancel?order_id=${orderId}`,
+      success_url: `${baseUrl}/`,
+      cancel_url: `${baseUrl}/`,
       metadata: { orderId },
     };
 
@@ -104,7 +106,8 @@ app.post('/create-checkout-session', async (req, res) => {
  */
 app.post('/create-setup-session', async (req, res) => {
   try {
-    const { customerId } = req.body;
+    const { customerId, appBaseUrl } = req.body;
+    const baseUrl = appBaseUrl || APP_BASE_URL;
 
     if (!customerId) {
       return res.status(400).json({ error: 'customerId is required' });
@@ -113,8 +116,8 @@ app.post('/create-setup-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'setup',
       customer: customerId,
-      success_url: `${APP_BASE_URL}/#/card-saved`,
-      cancel_url: `${APP_BASE_URL}/#/card-save-cancel`,
+      success_url: `${baseUrl}/`,
+      cancel_url: `${baseUrl}/`,
       payment_method_types: ['card'],
     });
 
@@ -214,6 +217,233 @@ app.post('/charge-saved-card', async (req, res) => {
     });
   } catch (err) {
     console.error('[charge-saved-card]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Stripe Connect ───
+
+const PLATFORM_FEE_PERCENT = 5;
+
+/**
+ * Create a Stripe Connect account for a restaurant and return an onboarding link.
+ * Body: { restaurantId, email, businessName, appBaseUrl }
+ * Returns: { accountId, onboardingUrl }
+ */
+app.post('/create-connect-account', async (req, res) => {
+  try {
+    const { restaurantId, email, businessName, appBaseUrl } = req.body;
+    const baseUrl = appBaseUrl || APP_BASE_URL;
+
+    if (!restaurantId || !email) {
+      return res.status(400).json({ error: 'restaurantId and email are required' });
+    }
+
+    const account = await stripe.accounts.create({
+      type: 'express',
+      email,
+      business_profile: { name: businessName || undefined },
+      metadata: { firebaseRestaurantId: restaurantId },
+    });
+
+    const accountLink = await stripe.accountLinks.create({
+      account: account.id,
+      refresh_url: `${baseUrl}/`,
+      return_url: `${baseUrl}/`,
+      type: 'account_onboarding',
+    });
+
+    res.json({ accountId: account.id, onboardingUrl: accountLink.url });
+  } catch (err) {
+    console.error('[create-connect-account]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Generate a fresh onboarding link for an existing Connect account.
+ * Body: { accountId, appBaseUrl }
+ * Returns: { onboardingUrl }
+ */
+app.post('/connect-onboarding-link', async (req, res) => {
+  try {
+    const { accountId, appBaseUrl } = req.body;
+    const baseUrl = appBaseUrl || APP_BASE_URL;
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'accountId is required' });
+    }
+
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: `${baseUrl}/`,
+      return_url: `${baseUrl}/`,
+      type: 'account_onboarding',
+    });
+
+    res.json({ onboardingUrl: accountLink.url });
+  } catch (err) {
+    console.error('[connect-onboarding-link]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Check if a Connect account has completed onboarding.
+ * Body: { accountId }
+ * Returns: { chargesEnabled, payoutsEnabled, detailsSubmitted }
+ */
+app.post('/connect-account-status', async (req, res) => {
+  try {
+    const { accountId } = req.body;
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'accountId is required' });
+    }
+
+    const account = await stripe.accounts.retrieve(accountId);
+
+    res.json({
+      chargesEnabled: account.charges_enabled,
+      payoutsEnabled: account.payouts_enabled,
+      detailsSubmitted: account.details_submitted,
+    });
+  } catch (err) {
+    console.error('[connect-account-status]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Create a Checkout Session with split payment (platform keeps 5% + COD debt recovery).
+ * Body: { customerId, items, orderId, currency, connectedAccountId, appBaseUrl, platformDebtPaisa }
+ * Returns: { url, sessionId, normalFeePaisa, debtRecoveredPaisa, totalApplicationFeePaisa, restaurantAmountPaisa }
+ */
+app.post('/create-connected-checkout', async (req, res) => {
+  try {
+    const { customerId, items, orderId, currency, connectedAccountId, appBaseUrl, platformDebtPaisa } = req.body;
+    const baseUrl = appBaseUrl || APP_BASE_URL;
+    const debt = Math.max(0, Math.round(platformDebtPaisa || 0));
+
+    if (!items || !items.length || !orderId || !connectedAccountId) {
+      return res.status(400).json({
+        error: 'items, orderId, and connectedAccountId are required',
+      });
+    }
+
+    const lineItems = items.map((item) => ({
+      price_data: {
+        currency: currency || 'pkr',
+        product_data: { name: item.name },
+        unit_amount: item.priceInPaisa,
+      },
+      quantity: item.quantity,
+    }));
+
+    const totalAmountPaisa = items.reduce(
+      (sum, item) => sum + item.priceInPaisa * item.quantity,
+      0
+    );
+    const normalFeePaisa = Math.round(totalAmountPaisa * PLATFORM_FEE_PERCENT / 100);
+    const debtRecoveredPaisa = Math.min(debt, totalAmountPaisa - normalFeePaisa);
+    const totalApplicationFeePaisa = normalFeePaisa + Math.max(0, debtRecoveredPaisa);
+
+    const sessionParams = {
+      mode: 'payment',
+      line_items: lineItems,
+      success_url: `${baseUrl}/`,
+      cancel_url: `${baseUrl}/`,
+      metadata: { orderId },
+      payment_intent_data: {
+        application_fee_amount: totalApplicationFeePaisa,
+        transfer_data: { destination: connectedAccountId },
+      },
+    };
+
+    if (customerId) {
+      sessionParams.customer = customerId;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+    res.json({
+      url: session.url,
+      sessionId: session.id,
+      normalFeePaisa,
+      debtRecoveredPaisa: Math.max(0, debtRecoveredPaisa),
+      totalApplicationFeePaisa,
+      restaurantAmountPaisa: totalAmountPaisa - totalApplicationFeePaisa,
+    });
+  } catch (err) {
+    console.error('[create-connected-checkout]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Charge a saved card with split payment (platform keeps 5% + COD debt recovery).
+ * Body: { customerId, paymentMethodId, amountInPaisa, orderId, currency, connectedAccountId, platformDebtPaisa }
+ * Returns: { success, paymentIntentId, normalFeePaisa, debtRecoveredPaisa, totalApplicationFeePaisa, restaurantAmountPaisa }
+ */
+app.post('/charge-saved-card-connected', async (req, res) => {
+  try {
+    const { customerId, paymentMethodId, amountInPaisa, orderId, currency, connectedAccountId, platformDebtPaisa } = req.body;
+    const debt = Math.max(0, Math.round(platformDebtPaisa || 0));
+
+    if (!customerId || !paymentMethodId || !amountInPaisa || !orderId || !connectedAccountId) {
+      return res.status(400).json({
+        error: 'customerId, paymentMethodId, amountInPaisa, orderId, and connectedAccountId are required',
+      });
+    }
+
+    const normalFeePaisa = Math.round(amountInPaisa * PLATFORM_FEE_PERCENT / 100);
+    const debtRecoveredPaisa = Math.min(debt, amountInPaisa - normalFeePaisa);
+    const totalApplicationFeePaisa = normalFeePaisa + Math.max(0, debtRecoveredPaisa);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountInPaisa,
+      currency: currency || 'pkr',
+      customer: customerId,
+      payment_method: paymentMethodId,
+      off_session: true,
+      confirm: true,
+      application_fee_amount: totalApplicationFeePaisa,
+      transfer_data: { destination: connectedAccountId },
+      metadata: { orderId },
+    });
+
+    res.json({
+      success: paymentIntent.status === 'succeeded',
+      paymentIntentId: paymentIntent.id,
+      status: paymentIntent.status,
+      normalFeePaisa,
+      debtRecoveredPaisa: Math.max(0, debtRecoveredPaisa),
+      totalApplicationFeePaisa,
+      restaurantAmountPaisa: amountInPaisa - totalApplicationFeePaisa,
+    });
+  } catch (err) {
+    console.error('[charge-saved-card-connected]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Get a Stripe Connect Express dashboard login link.
+ * Body: { accountId }
+ * Returns: { url }
+ */
+app.post('/connect-dashboard-link', async (req, res) => {
+  try {
+    const { accountId } = req.body;
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'accountId is required' });
+    }
+
+    const loginLink = await stripe.accounts.createLoginLink(accountId);
+    res.json({ url: loginLink.url });
+  } catch (err) {
+    console.error('[connect-dashboard-link]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

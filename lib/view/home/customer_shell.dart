@@ -5,12 +5,14 @@ import 'package:speak_dine/view/home/user_home.dart';
 import 'package:speak_dine/view/user/cart_view.dart';
 import 'package:speak_dine/view/user/customer_orders_view.dart';
 import 'package:speak_dine/view/user/customer_profile.dart';
+import 'package:speak_dine/view/user/customer_transactions_view.dart';
 import 'package:speak_dine/services/cart_service.dart';
 
 final _customerDockItems = [
   const DockItem(icon: RadixIcons.home, label: 'Restaurants'),
   DockItem(icon: Icons.shopping_bag_outlined, label: 'Cart'),
   const DockItem(icon: RadixIcons.archive, label: 'Orders'),
+  const DockItem(icon: RadixIcons.cardStack, label: 'Payments'),
   const DockItem(icon: RadixIcons.person, label: 'Profile'),
 ];
 
@@ -64,6 +66,7 @@ class _CustomerShellState extends State<CustomerShell> {
                     ),
                     CartView(embedded: true),
                     const CustomerOrdersView(),
+                    const CustomerTransactionsView(),
                     const CustomerProfileView(),
                   ],
                 ),

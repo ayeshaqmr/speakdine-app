@@ -27,106 +27,24 @@ class _CartViewState extends State<CartView> {
     setState(() => cartService.decreaseQuantity(restaurantId, index));
   }
 
-  void _showPaymentMethodDialog() {
-    final theme = Theme.of(context);
+  static const _stripeMinimumPkr = 150.0;
 
+  void _showPaymentMethodDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Payment Method'),
-        content: SizedBox(
-          width: 340,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('How would you like to pay?').muted().small(),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: PrimaryButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _placeOrder(paymentMethod: 'online');
-                  },
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(RadixIcons.globe, size: 16),
-                      SizedBox(width: 8),
-                      Text('Pay Online'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlineButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _placeOrder(paymentMethod: 'cod');
-                  },
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(RadixIcons.archive, size: 16,
-                          color: theme.colorScheme.foreground),
-                      const SizedBox(width: 8),
-                      const Text('Cash on Delivery'),
-                    ],
-                  ),
-                ),
-              ),
-              FutureBuilder<_SavedCardOption?>(
-                future: _loadSavedCardOption(),
-                builder: (context, snap) {
-                  if (!snap.hasData || snap.data == null) {
-                    return const SizedBox.shrink();
-                  }
-                  final option = snap.data!;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlineButton(
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _placeOrder(
-                            paymentMethod: 'saved_card',
-                            stripeCustomerId: option.stripeCustomerId,
-                            savedCardId: option.card.id,
-                          );
-                        },
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(RadixIcons.cardStack, size: 16,
-                                color: theme.colorScheme.foreground),
-                            const SizedBox(width: 8),
-                            Text('${option.card.brand.toUpperCase()} ···· ${option.card.last4}'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
+      builder: (ctx) => _PaymentMethodDialog(
+        totalAmount: cartService.totalAmount,
+        firestore: _firestore,
+        onSelect: (method, {String? stripeCustomerId, String? savedCardId}) {
+          Navigator.pop(ctx);
+          _placeOrder(
+            paymentMethod: method,
+            stripeCustomerId: stripeCustomerId,
+            savedCardId: savedCardId,
+          );
+        },
       ),
     );
-  }
-
-  Future<_SavedCardOption?> _loadSavedCardOption() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-    final doc = await _firestore.collection('users').doc(user.uid).get();
-    final customerId = doc.data()?['stripeCustomerId'] as String?;
-    if (customerId == null || customerId.isEmpty) return null;
-    final cards = await PaymentService.getSavedCards(stripeCustomerId: customerId);
-    if (cards.isEmpty) return null;
-    return _SavedCardOption(stripeCustomerId: customerId, card: cards.first);
   }
 
   Future<void> _placeOrder({
@@ -184,11 +102,21 @@ class _CartViewState extends State<CartView> {
           });
         }
 
+        final restaurantDoc = await _firestore
+            .collection('restaurants')
+            .doc(restaurantId)
+            .get();
+        final connectedAccountId =
+            restaurantDoc.data()?['stripeConnectId'] as String?;
+
         final customerOrderRef = _firestore
             .collection('users')
             .doc(user.uid)
             .collection('orders')
             .doc();
+
+        final effectivePaymentMethod =
+            paymentMethod == 'saved_card' ? 'online' : paymentMethod;
 
         final restaurantOrderRef = await _firestore
             .collection('restaurants')
@@ -207,7 +135,7 @@ class _CartViewState extends State<CartView> {
           'itemCount': totalQuantity,
           'total': restaurantTotal,
           'status': initialStatus,
-          'paymentMethod': paymentMethod == 'saved_card' ? 'online' : paymentMethod,
+          'paymentMethod': effectivePaymentMethod,
           'paymentStatus': paymentStatus,
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -220,10 +148,25 @@ class _CartViewState extends State<CartView> {
           'itemCount': totalQuantity,
           'total': restaurantTotal,
           'status': initialStatus,
-          'paymentMethod': paymentMethod == 'saved_card' ? 'online' : paymentMethod,
+          'paymentMethod': effectivePaymentMethod,
           'paymentStatus': paymentStatus,
           'createdAt': FieldValue.serverTimestamp(),
         });
+
+          final debtDoc = await _firestore
+            .collection('platformDebts')
+            .doc(restaurantId)
+            .get();
+        final currentDebtPkr = (debtDoc.data()?['amount'] as num?)?.toDouble() ?? 0.0;
+        final currentDebtPaisa = (currentDebtPkr * 100).round();
+
+        if (paymentMethod == 'cod') {
+          final codFee = restaurantTotal * 0.05;
+          await _firestore
+              .collection('platformDebts')
+              .doc(restaurantId)
+              .set({'amount': FieldValue.increment(codFee)}, SetOptions(merge: true));
+        }
 
         if (paymentMethod == 'online') {
           final customerId = stripeCustomerId ??
@@ -233,36 +176,162 @@ class _CartViewState extends State<CartView> {
                 name: customerName,
               );
 
-          await PaymentService.openCheckout(
-            stripeCustomerId: customerId,
-            items: orderItems,
-            orderId: customerOrderRef.id,
-          );
+          if (connectedAccountId != null) {
+            final payResult = await PaymentService.openConnectedCheckout(
+              stripeCustomerId: customerId,
+              items: orderItems,
+              orderId: customerOrderRef.id,
+              connectedAccountId: connectedAccountId,
+              platformDebtPaisa: currentDebtPaisa,
+            );
+
+            if (payResult == null || payResult.sessionId == null) {
+              await restaurantOrderRef.delete();
+              await customerOrderRef.delete();
+              if (mounted) {
+                showAppToast(context, 'Payment setup failed. Total may be too low for online payment. Try Cash on Delivery.');
+              }
+              setState(() => _placingOrder = false);
+              return;
+            }
+
+            if (payResult.debtRecoveredPaisa > 0) {
+              await _firestore
+                  .collection('platformDebts')
+                  .doc(restaurantId)
+                  .set({'amount': FieldValue.increment(-payResult.debtRecoveredPkr)}, SetOptions(merge: true));
+            }
+
+            await _saveTransaction(
+              customerId: user.uid,
+              customerName: customerName,
+              restaurantId: restaurantId,
+              restaurantName: items.first['restaurantName'] ?? 'Restaurant',
+              orderId: customerOrderRef.id,
+              amount: restaurantTotal,
+              platformFee: payResult.normalFeePkr,
+              restaurantAmount: payResult.restaurantAmountPkr,
+              paymentMethod: 'online',
+              debtRecovered: payResult.debtRecoveredPkr,
+              debtRemaining: currentDebtPkr - payResult.debtRecoveredPkr,
+            );
+          } else {
+            final sessionId = await PaymentService.openCheckout(
+              stripeCustomerId: customerId,
+              items: orderItems,
+              orderId: customerOrderRef.id,
+            );
+
+            if (sessionId == null) {
+              await restaurantOrderRef.delete();
+              await customerOrderRef.delete();
+              if (mounted) {
+                showAppToast(context, 'Payment setup failed. Total may be too low for online payment. Try Cash on Delivery.');
+              }
+              setState(() => _placingOrder = false);
+              return;
+            }
+
+            final platformFee = restaurantTotal * 0.05;
+            await _saveTransaction(
+              customerId: user.uid,
+              customerName: customerName,
+              restaurantId: restaurantId,
+              restaurantName: items.first['restaurantName'] ?? 'Restaurant',
+              orderId: customerOrderRef.id,
+              amount: restaurantTotal,
+              platformFee: platformFee,
+              restaurantAmount: restaurantTotal - platformFee,
+              paymentMethod: 'online',
+            );
+          }
         }
 
         if (paymentMethod == 'saved_card' && savedCardId != null) {
-          final charged = await PaymentService.chargeWithSavedCard(
-            stripeCustomerId: stripeCustomerId!,
-            paymentMethodId: savedCardId,
-            amount: restaurantTotal,
-            orderId: customerOrderRef.id,
-          );
+          if (connectedAccountId != null) {
+            final payResult = await PaymentService.chargeWithSavedCardConnected(
+              stripeCustomerId: stripeCustomerId!,
+              paymentMethodId: savedCardId,
+              amount: restaurantTotal,
+              orderId: customerOrderRef.id,
+              connectedAccountId: connectedAccountId,
+              platformDebtPaisa: currentDebtPaisa,
+            );
 
-          if (charged) {
-            await restaurantOrderRef.update({
-              'paymentStatus': 'paid',
-              'status': 'pending',
-            });
-            await customerOrderRef.update({
-              'paymentStatus': 'paid',
-              'status': 'pending',
-            });
-          } else {
-            if (mounted) {
-              showAppToast(context, 'Card payment failed. Please try another method.');
+            if (payResult.success) {
+              await restaurantOrderRef.update({
+                'paymentStatus': 'paid',
+                'status': 'pending',
+              });
+              await customerOrderRef.update({
+                'paymentStatus': 'paid',
+                'status': 'pending',
+              });
+
+              if (payResult.debtRecoveredPaisa > 0) {
+                await _firestore
+                    .collection('platformDebts')
+                    .doc(restaurantId)
+                    .set({'amount': FieldValue.increment(-payResult.debtRecoveredPkr)}, SetOptions(merge: true));
+              }
+
+              await _saveTransaction(
+                customerId: user.uid,
+                customerName: customerName,
+                restaurantId: restaurantId,
+                restaurantName: items.first['restaurantName'] ?? 'Restaurant',
+                orderId: customerOrderRef.id,
+                amount: restaurantTotal,
+                platformFee: payResult.normalFeePkr,
+                restaurantAmount: payResult.restaurantAmountPkr,
+                paymentMethod: 'saved_card',
+                debtRecovered: payResult.debtRecoveredPkr,
+                debtRemaining: currentDebtPkr - payResult.debtRecoveredPkr,
+              );
+            } else {
+              if (mounted) {
+                showAppToast(context, 'Card payment failed. Please try another method.');
+              }
+              setState(() => _placingOrder = false);
+              return;
             }
-            setState(() => _placingOrder = false);
-            return;
+          } else {
+            final charged = await PaymentService.chargeWithSavedCard(
+              stripeCustomerId: stripeCustomerId!,
+              paymentMethodId: savedCardId,
+              amount: restaurantTotal,
+              orderId: customerOrderRef.id,
+            );
+
+            if (charged) {
+              await restaurantOrderRef.update({
+                'paymentStatus': 'paid',
+                'status': 'pending',
+              });
+              await customerOrderRef.update({
+                'paymentStatus': 'paid',
+                'status': 'pending',
+              });
+
+              final platformFee = restaurantTotal * 0.05;
+              await _saveTransaction(
+                customerId: user.uid,
+                customerName: customerName,
+                restaurantId: restaurantId,
+                restaurantName: items.first['restaurantName'] ?? 'Restaurant',
+                orderId: customerOrderRef.id,
+                amount: restaurantTotal,
+                platformFee: platformFee,
+                restaurantAmount: restaurantTotal - platformFee,
+                paymentMethod: 'saved_card',
+              );
+            } else {
+              if (mounted) {
+                showAppToast(context, 'Card payment failed. Please try another method.');
+              }
+              setState(() => _placingOrder = false);
+              return;
+            }
           }
         }
       }
@@ -594,6 +663,184 @@ class _CartViewState extends State<CartView> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _saveTransaction({
+    required String customerId,
+    required String customerName,
+    required String restaurantId,
+    required String restaurantName,
+    required String orderId,
+    required double amount,
+    required double platformFee,
+    required double restaurantAmount,
+    required String paymentMethod,
+    double debtRecovered = 0,
+    double debtRemaining = 0,
+  }) async {
+    final txData = <String, dynamic>{
+      'customerId': customerId,
+      'customerName': customerName,
+      'restaurantId': restaurantId,
+      'restaurantName': restaurantName,
+      'orderId': orderId,
+      'amount': amount,
+      'platformFee': platformFee,
+      'restaurantAmount': restaurantAmount,
+      'paymentMethod': paymentMethod,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+
+    if (debtRecovered > 0) {
+      txData['debtRecovered'] = debtRecovered;
+      txData['debtRemaining'] = debtRemaining < 0 ? 0.0 : debtRemaining;
+    }
+
+    await _firestore.collection('transactions').add(txData);
+  }
+}
+
+class _PaymentMethodDialog extends StatefulWidget {
+  final double totalAmount;
+  final FirebaseFirestore firestore;
+  final void Function(String method, {String? stripeCustomerId, String? savedCardId}) onSelect;
+
+  const _PaymentMethodDialog({
+    required this.totalAmount,
+    required this.firestore,
+    required this.onSelect,
+  });
+
+  @override
+  State<_PaymentMethodDialog> createState() => _PaymentMethodDialogState();
+}
+
+class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
+  bool _loading = true;
+  _SavedCardOption? _savedCard;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final doc = await widget.firestore.collection('users').doc(user.uid).get();
+      final customerId = doc.data()?['stripeCustomerId'] as String?;
+      if (customerId != null && customerId.isNotEmpty) {
+        final cards = await PaymentService.getSavedCards(stripeCustomerId: customerId);
+        if (cards.isNotEmpty) {
+          _savedCard = _SavedCardOption(stripeCustomerId: customerId, card: cards.first);
+        }
+      }
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final belowMinimum = widget.totalAmount < _CartViewState._stripeMinimumPkr;
+
+    return AlertDialog(
+      title: const Text('Payment Method'),
+      content: SizedBox(
+        width: 340,
+        child: _loading
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 16),
+                  SizedBox.square(
+                    dimension: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Loading payment options...').muted().small(),
+                  const SizedBox(height: 16),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('How would you like to pay?').muted().small(),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: PrimaryButton(
+                      onPressed: belowMinimum
+                          ? null
+                          : () => widget.onSelect('online'),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(RadixIcons.globe, size: 16),
+                          SizedBox(width: 8),
+                          Text('Pay Online'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (belowMinimum) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Online payment requires a minimum of ${_CartViewState._stripeMinimumPkr.toInt()} PKR',
+                      style: TextStyle(
+                        color: theme.colorScheme.destructive,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlineButton(
+                      onPressed: () => widget.onSelect('cod'),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(RadixIcons.archive, size: 16,
+                              color: theme.colorScheme.foreground),
+                          const SizedBox(width: 8),
+                          const Text('Cash on Delivery'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_savedCard != null) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlineButton(
+                        onPressed: belowMinimum
+                            ? null
+                            : () => widget.onSelect(
+                                  'saved_card',
+                                  stripeCustomerId: _savedCard!.stripeCustomerId,
+                                  savedCardId: _savedCard!.card.id,
+                                ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(RadixIcons.cardStack, size: 16,
+                                color: theme.colorScheme.foreground),
+                            const SizedBox(width: 8),
+                            Text('${_savedCard!.card.brand.toUpperCase()} ···· ${_savedCard!.card.last4}'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
       ),
     );
   }

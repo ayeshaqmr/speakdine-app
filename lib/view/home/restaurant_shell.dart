@@ -4,10 +4,12 @@ import 'package:speak_dine/view/restaurant/menu_management.dart';
 import 'package:speak_dine/view/restaurant/orders_view.dart';
 import 'package:speak_dine/view/restaurant/qr_code_view.dart';
 import 'package:speak_dine/view/restaurant/restaurant_profile.dart';
+import 'package:speak_dine/view/restaurant/restaurant_transactions_view.dart';
 
 const _restaurantDockItems = [
   DockItem(icon: RadixIcons.reader, label: 'Menu'),
   DockItem(icon: RadixIcons.archive, label: 'Orders'),
+  DockItem(icon: RadixIcons.cardStack, label: 'Payments'),
   DockItem(icon: RadixIcons.viewGrid, label: 'QR Code'),
   DockItem(icon: RadixIcons.person, label: 'Profile'),
 ];
@@ -37,6 +39,7 @@ class _RestaurantShellState extends State<RestaurantShell> {
                   children: const [
                     MenuManagementView(),
                     OrdersView(),
+                    RestaurantTransactionsView(),
                     QRCodeView(),
                     RestaurantProfileView(),
                   ],

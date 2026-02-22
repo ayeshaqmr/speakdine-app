@@ -50,6 +50,45 @@ class _MenuManagementViewState extends State<MenuManagementView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _firestore.collection('restaurants').doc(user?.uid).snapshots(),
+      builder: (context, restaurantSnap) {
+        final isOnboarded =
+            restaurantSnap.data?.get('stripeConnectOnboarded') == true;
+
+        if (restaurantSnap.hasData && !isOnboarded) {
+          return _buildConnectGate(theme);
+        }
+
+        return _buildMenuContent(theme);
+      },
+    );
+  }
+
+  Widget _buildConnectGate(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(RadixIcons.lockClosed,
+                size: 48, color: theme.colorScheme.mutedForeground),
+            const SizedBox(height: 16),
+            const Text('Payment Setup Required').semiBold(),
+            const SizedBox(height: 8),
+            const Text(
+              'Complete your Stripe payment setup in the Profile tab before adding menu items.',
+              textAlign: TextAlign.center,
+            ).muted().small(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuContent(ThemeData theme) {
     return Stack(
       children: [
         Column(

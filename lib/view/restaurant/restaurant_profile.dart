@@ -2,8 +2,10 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
 import 'package:speak_dine/services/image_upload_service.dart';
+import 'package:speak_dine/services/payment_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
 
 const _hourOptions = [
@@ -34,9 +36,12 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
   bool _loading = true;
   bool _saving = false;
   bool _uploadingCover = false;
+  bool _connectLoading = false;
   String? _coverImageUrl;
   String? _openTime;
   String? _closeTime;
+  String? _stripeConnectId;
+  bool _stripeConnectOnboarded = false;
 
   @override
   void initState() {
@@ -68,11 +73,61 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
         _coverImageUrl = data['coverImageUrl'] as String?;
         _openTime = data['openTime'] as String?;
         _closeTime = data['closeTime'] as String?;
+        _stripeConnectId = data['stripeConnectId'] as String?;
+        _stripeConnectOnboarded = data['stripeConnectOnboarded'] == true;
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
     }
     if (mounted) setState(() => _loading = false);
+    if (_stripeConnectId != null && !_stripeConnectOnboarded) {
+      _refreshConnectStatus();
+    }
+  }
+
+  Future<void> _refreshConnectStatus() async {
+    if (_stripeConnectId == null) return;
+    final ready = await PaymentService.checkConnectStatus(
+      accountId: _stripeConnectId!,
+      restaurantId: user?.uid ?? '',
+    );
+    if (mounted) setState(() => _stripeConnectOnboarded = ready);
+  }
+
+  Future<void> _startConnectOnboarding() async {
+    setState(() => _connectLoading = true);
+
+    if (_stripeConnectId != null) {
+      final url = await PaymentService.getOnboardingLink(
+        accountId: _stripeConnectId!,
+      );
+      if (url != null) {
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, webOnlyWindowName: '_self');
+        }
+      } else {
+        if (mounted) showAppToast(context, 'Could not load onboarding. Try again.');
+      }
+    } else {
+      final result = await PaymentService.createConnectAccount(
+        restaurantId: user?.uid ?? '',
+        email: _emailController.text.trim(),
+        businessName: _nameController.text.trim(),
+      );
+      if (result != null) {
+        _stripeConnectId = result['accountId'];
+        final url = result['onboardingUrl']!;
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, webOnlyWindowName: '_self');
+        }
+      } else {
+        if (mounted) showAppToast(context, 'Failed to set up payments. Try again.');
+      }
+    }
+
+    if (mounted) setState(() => _connectLoading = false);
   }
 
   Future<void> _pickCoverImage() async {
@@ -159,6 +214,8 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
             const Text('Business Hours').semiBold().small(),
             const SizedBox(height: 6),
             _buildBusinessHours(theme),
+            const SizedBox(height: 24),
+            _buildStripeConnectSection(theme),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -336,6 +393,114 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStripeConnectSection(ThemeData theme) {
+    final bool isOnboarded = _stripeConnectOnboarded;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isOnboarded
+              ? Colors.green.withAlpha(60)
+              : theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isOnboarded ? RadixIcons.check : RadixIcons.globe,
+                size: 16,
+                color: isOnboarded ? Colors.green : theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              const Text('Payment Setup').semiBold(),
+              const Spacer(),
+              if (_stripeConnectId != null && !isOnboarded)
+                GhostButton(
+                  density: ButtonDensity.compact,
+                  onPressed: _refreshConnectStatus,
+                  child: const Icon(RadixIcons.reload, size: 14),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (isOnboarded) ...[
+            Text(
+              'Payments are enabled. You will receive payouts directly to your bank.',
+              style: TextStyle(color: Colors.green, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlineButton(
+                onPressed: () async {
+                  if (_stripeConnectId == null) return;
+                  final url = await PaymentService.getConnectDashboardLink(
+                    accountId: _stripeConnectId!,
+                  );
+                  if (url != null) {
+                    final uri = Uri.parse(url);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, webOnlyWindowName: '_self');
+                    }
+                  }
+                },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(RadixIcons.externalLink,
+                        size: 14, color: theme.colorScheme.foreground),
+                    const SizedBox(width: 8),
+                    const Text('Stripe Dashboard'),
+                  ],
+                ),
+              ),
+            ),
+          ] else ...[
+            Text(
+              _stripeConnectId != null
+                  ? 'Onboarding started but not completed. Finish setup to accept payments.'
+                  : 'Set up Stripe to receive online payments from customers.',
+            ).muted().small(),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: _connectLoading
+                  ? Center(
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    )
+                  : PrimaryButton(
+                      onPressed: _startConnectOnboarding,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(RadixIcons.globe, size: 14),
+                          const SizedBox(width: 8),
+                          Text(_stripeConnectId != null
+                              ? 'Continue Setup'
+                              : 'Set Up Payments'),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

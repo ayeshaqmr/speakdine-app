@@ -1,11 +1,20 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:speak_dine/config/api_keys.dart';
+
+String? _getAppBaseUrl() {
+  if (!kIsWeb) return null;
+  try {
+    return Uri.base.origin;
+  } catch (_) {
+    return null;
+  }
+}
 
 class SavedCard {
   final String id;
@@ -90,12 +99,16 @@ class PaymentService {
           'priceInPaisa': ((item['price'] as num? ?? 0) * 100).round(),
         }).toList();
 
-    final result = await _post('/create-checkout-session', {
+    final body = <String, dynamic>{
       'customerId': stripeCustomerId,
       'items': lineItems,
       'orderId': orderId,
       'currency': 'pkr',
-    });
+    };
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
+
+    final result = await _post('/create-checkout-session', body);
 
     if (result == null) return null;
 
@@ -105,7 +118,7 @@ class PaymentService {
     if (url != null) {
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        await launchUrl(uri, webOnlyWindowName: '_self');
       }
     }
 
@@ -116,9 +129,13 @@ class PaymentService {
   static Future<bool> openCardSetup({
     required String stripeCustomerId,
   }) async {
-    final result = await _post('/create-setup-session', {
+    final body = <String, dynamic>{
       'customerId': stripeCustomerId,
-    });
+    };
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
+
+    final result = await _post('/create-setup-session', body);
 
     if (result == null) return false;
 
@@ -126,7 +143,7 @@ class PaymentService {
     if (url != null) {
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        await launchUrl(uri, webOnlyWindowName: '_self');
         return true;
       }
     }
@@ -184,4 +201,185 @@ class PaymentService {
 
     return result?['success'] == true;
   }
+
+  // ─── Stripe Connect ───
+
+  /// Creates a Stripe Connect Express account for a restaurant and returns an onboarding URL.
+  static Future<Map<String, String>?> createConnectAccount({
+    required String restaurantId,
+    required String email,
+    String? businessName,
+  }) async {
+    final body = <String, dynamic>{
+      'restaurantId': restaurantId,
+      'email': email,
+      'businessName': businessName,
+    };
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
+
+    final result = await _post('/create-connect-account', body);
+    if (result == null) return null;
+
+    final accountId = result['accountId'] as String?;
+    final onboardingUrl = result['onboardingUrl'] as String?;
+    if (accountId == null || onboardingUrl == null) return null;
+
+    await _firestore.collection('restaurants').doc(restaurantId).update({
+      'stripeConnectId': accountId,
+      'stripeConnectOnboarded': false,
+    });
+
+    return {'accountId': accountId, 'onboardingUrl': onboardingUrl};
+  }
+
+  /// Generates a fresh onboarding link for an existing Connect account.
+  static Future<String?> getOnboardingLink({
+    required String accountId,
+  }) async {
+    final body = <String, dynamic>{'accountId': accountId};
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
+
+    final result = await _post('/connect-onboarding-link', body);
+    return result?['onboardingUrl'] as String?;
+  }
+
+  /// Checks if a Connect account has completed onboarding.
+  static Future<bool> checkConnectStatus({
+    required String accountId,
+    required String restaurantId,
+  }) async {
+    final result = await _post('/connect-account-status', {
+      'accountId': accountId,
+    });
+    if (result == null) return false;
+
+    final chargesEnabled = result['chargesEnabled'] == true;
+    final detailsSubmitted = result['detailsSubmitted'] == true;
+    final isReady = chargesEnabled && detailsSubmitted;
+
+    if (isReady) {
+      await _firestore.collection('restaurants').doc(restaurantId).update({
+        'stripeConnectOnboarded': true,
+      });
+    }
+
+    return isReady;
+  }
+
+  /// Creates a checkout session with split payment (5% platform fee + COD debt recovery).
+  /// Returns a [ConnectedPaymentResult] with session ID and debt recovery breakdown, or null on failure.
+  static Future<ConnectedPaymentResult?> openConnectedCheckout({
+    required String? stripeCustomerId,
+    required List<Map<String, dynamic>> items,
+    required String orderId,
+    required String connectedAccountId,
+    int platformDebtPaisa = 0,
+  }) async {
+    final lineItems = items.map((item) => {
+          'name': item['name'] as String? ?? 'Item',
+          'quantity': item['quantity'] as int? ?? 1,
+          'priceInPaisa': ((item['price'] as num? ?? 0) * 100).round(),
+        }).toList();
+
+    final body = <String, dynamic>{
+      'customerId': stripeCustomerId,
+      'items': lineItems,
+      'orderId': orderId,
+      'currency': 'pkr',
+      'connectedAccountId': connectedAccountId,
+      'platformDebtPaisa': platformDebtPaisa,
+    };
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
+
+    final result = await _post('/create-connected-checkout', body);
+    if (result == null) return null;
+
+    final url = result['url'] as String?;
+    final sessionId = result['sessionId'] as String?;
+
+    if (url != null) {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, webOnlyWindowName: '_self');
+      }
+    }
+
+    return ConnectedPaymentResult(
+      sessionId: sessionId,
+      success: sessionId != null,
+      normalFeePaisa: (result['normalFeePaisa'] as num?)?.toInt() ?? 0,
+      debtRecoveredPaisa: (result['debtRecoveredPaisa'] as num?)?.toInt() ?? 0,
+      totalApplicationFeePaisa: (result['totalApplicationFeePaisa'] as num?)?.toInt() ?? 0,
+      restaurantAmountPaisa: (result['restaurantAmountPaisa'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Charges a saved card with split payment (5% platform fee + COD debt recovery).
+  /// Returns a [ConnectedPaymentResult] with success status and debt recovery breakdown.
+  static Future<ConnectedPaymentResult> chargeWithSavedCardConnected({
+    required String stripeCustomerId,
+    required String paymentMethodId,
+    required double amount,
+    required String orderId,
+    required String connectedAccountId,
+    int platformDebtPaisa = 0,
+  }) async {
+    final result = await _post('/charge-saved-card-connected', {
+      'customerId': stripeCustomerId,
+      'paymentMethodId': paymentMethodId,
+      'amountInPaisa': (amount * 100).round(),
+      'orderId': orderId,
+      'currency': 'pkr',
+      'connectedAccountId': connectedAccountId,
+      'platformDebtPaisa': platformDebtPaisa,
+    });
+
+    if (result == null) {
+      return ConnectedPaymentResult(success: false);
+    }
+
+    return ConnectedPaymentResult(
+      success: result['success'] == true,
+      normalFeePaisa: (result['normalFeePaisa'] as num?)?.toInt() ?? 0,
+      debtRecoveredPaisa: (result['debtRecoveredPaisa'] as num?)?.toInt() ?? 0,
+      totalApplicationFeePaisa: (result['totalApplicationFeePaisa'] as num?)?.toInt() ?? 0,
+      restaurantAmountPaisa: (result['restaurantAmountPaisa'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Gets a Stripe Express dashboard link for a restaurant.
+  static Future<String?> getConnectDashboardLink({
+    required String accountId,
+  }) async {
+    final result = await _post('/connect-dashboard-link', {
+      'accountId': accountId,
+    });
+    return result?['url'] as String?;
+  }
+}
+
+class ConnectedPaymentResult {
+  final String? sessionId;
+  final bool success;
+  final int normalFeePaisa;
+  final int debtRecoveredPaisa;
+  final int totalApplicationFeePaisa;
+  final int restaurantAmountPaisa;
+
+  const ConnectedPaymentResult({
+    this.sessionId,
+    this.success = false,
+    this.normalFeePaisa = 0,
+    this.debtRecoveredPaisa = 0,
+    this.totalApplicationFeePaisa = 0,
+    this.restaurantAmountPaisa = 0,
+  });
+
+  double get normalFeePkr => normalFeePaisa / 100;
+  double get debtRecoveredPkr => debtRecoveredPaisa / 100;
+  double get totalApplicationFeePkr => totalApplicationFeePaisa / 100;
+  double get restaurantAmountPkr => restaurantAmountPaisa / 100;
 }
