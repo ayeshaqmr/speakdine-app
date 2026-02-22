@@ -26,6 +26,10 @@ migrate_working_dir/
 # API keys
 lib/config/api_keys.dart
 
+# Server
+server/.env
+server/node_modules/
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id

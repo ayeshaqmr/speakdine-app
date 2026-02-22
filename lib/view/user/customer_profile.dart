@@ -3,6 +3,7 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
 import 'package:speak_dine/widgets/location_picker.dart';
 import 'package:speak_dine/services/image_upload_service.dart';
+import 'package:speak_dine/services/payment_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
@@ -25,10 +26,13 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
   bool _loading = true;
   bool _saving = false;
   bool _uploadingPhoto = false;
+  bool _loadingCards = false;
   double? _lat;
   double? _lng;
   String _address = '';
   String? _photoUrl;
+  String? _stripeCustomerId;
+  List<SavedCard> _savedCards = [];
 
   @override
   void initState() {
@@ -57,11 +61,59 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
         _lng = (profile['lng'] as num?)?.toDouble();
         _address = profile['address'] ?? '';
         _photoUrl = profile['photoUrl'] as String?;
+        _stripeCustomerId = profile['stripeCustomerId'] as String?;
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
     }
     if (mounted) setState(() => _loading = false);
+    _loadSavedCards();
+  }
+
+  Future<void> _loadSavedCards() async {
+    if (_stripeCustomerId == null || _stripeCustomerId!.isEmpty) return;
+    setState(() => _loadingCards = true);
+    final cards = await PaymentService.getSavedCards(
+        stripeCustomerId: _stripeCustomerId!);
+    if (mounted) {
+      setState(() {
+        _savedCards = cards;
+        _loadingCards = false;
+      });
+    }
+  }
+
+  Future<void> _addCard() async {
+    final customerId = _stripeCustomerId ??
+        await PaymentService.ensureStripeCustomer(
+          userId: _user?.uid ?? '',
+          email: _emailController.text.trim(),
+          name: _nameController.text.trim(),
+        );
+
+    if (customerId == null) {
+      if (mounted) showAppToast(context, 'Could not set up payment. Try again.');
+      return;
+    }
+
+    _stripeCustomerId = customerId;
+
+    final opened = await PaymentService.openCardSetup(
+        stripeCustomerId: customerId);
+    if (opened && mounted) {
+      showAppToast(context, 'Complete card setup in the opened page, then return here.');
+    }
+  }
+
+  Future<void> _deleteCard(SavedCard card) async {
+    final deleted =
+        await PaymentService.deleteSavedCard(paymentMethodId: card.id);
+    if (deleted) {
+      setState(() => _savedCards.removeWhere((c) => c.id == card.id));
+      if (mounted) showAppToast(context, 'Card removed');
+    } else {
+      if (mounted) showAppToast(context, 'Failed to remove card. Try again.');
+    }
   }
 
   Future<void> _pickAndUploadPhoto() async {
@@ -275,6 +327,8 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
               ),
             ),
             const SizedBox(height: 16),
+            _buildSavedCardsSection(theme),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: _saving
@@ -318,6 +372,90 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSavedCardsSection(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(RadixIcons.cardStack,
+                  size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('Payment Methods').semiBold(),
+              const Spacer(),
+              GhostButton(
+                density: ButtonDensity.compact,
+                onPressed: _loadSavedCards,
+                child: const Icon(RadixIcons.reload, size: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_loadingCards)
+            Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            )
+          else if (_savedCards.isEmpty)
+            Text('No saved cards yet').muted().small()
+          else
+            ..._savedCards.map((card) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Icon(RadixIcons.idCard,
+                          size: 16, color: theme.colorScheme.foreground),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${card.brand.toUpperCase()} ···· ${card.last4}  (${card.expMonth}/${card.expYear})',
+                        ).small(),
+                      ),
+                      GhostButton(
+                        density: ButtonDensity.icon,
+                        onPressed: () => _deleteCard(card),
+                        child: Icon(RadixIcons.trash, size: 14,
+                            color: theme.colorScheme.destructive),
+                      ),
+                    ],
+                  ),
+                )),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlineButton(
+              onPressed: _addCard,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(RadixIcons.plus,
+                      size: 14, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  const Text('Add Card'),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

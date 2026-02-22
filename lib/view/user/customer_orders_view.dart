@@ -175,9 +175,10 @@ class CustomerOrdersView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(child: Text(restaurantName).semiBold()),
+                _buildPaymentChip(theme, order),
+                const SizedBox(width: 6),
                 _buildStatusChip(theme, status),
               ],
             ),
@@ -244,6 +245,48 @@ class CustomerOrdersView extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentChip(ThemeData theme, Map<String, dynamic> order) {
+    final paymentMethod = order['paymentMethod'] as String? ?? 'cod';
+    final paymentStatus = order['paymentStatus'] as String? ?? 'pending';
+
+    final bool isPaid = paymentStatus == 'paid';
+    final bool isCod = paymentMethod == 'cod';
+
+    final String label;
+    final Color bgColor;
+    final Color textColor;
+
+    if (isCod) {
+      label = 'COD';
+      bgColor = Colors.orange.withAlpha(30);
+      textColor = Colors.orange;
+    } else if (isPaid) {
+      label = 'PAID';
+      bgColor = Colors.green.withAlpha(30);
+      textColor = Colors.green;
+    } else {
+      label = 'UNPAID';
+      bgColor = Colors.red.withAlpha(30);
+      textColor = Colors.red;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

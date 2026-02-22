@@ -173,10 +173,13 @@ class _OrdersViewState extends State<OrdersView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Order #${orderId.substring(0, 6).toUpperCase()}')
-                  .semiBold(),
+              Expanded(
+                child: Text('Order #${orderId.substring(0, 6).toUpperCase()}')
+                    .semiBold(),
+              ),
+              _buildPaymentBadge(theme, order),
+              const SizedBox(width: 6),
               _buildStatusBadge(theme, status),
             ],
           ),
@@ -301,6 +304,48 @@ class _OrdersViewState extends State<OrdersView> {
           color: textColor,
           fontSize: 11,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentBadge(ThemeData theme, Map<String, dynamic> order) {
+    final paymentMethod = order['paymentMethod'] as String? ?? 'cod';
+    final paymentStatus = order['paymentStatus'] as String? ?? 'pending';
+
+    final bool isPaid = paymentStatus == 'paid';
+    final bool isCod = paymentMethod == 'cod';
+
+    final String label;
+    final Color bgColor;
+    final Color textColor;
+
+    if (isCod) {
+      label = 'COD';
+      bgColor = Colors.orange.withAlpha(30);
+      textColor = Colors.orange;
+    } else if (isPaid) {
+      label = 'PAID';
+      bgColor = Colors.green.withAlpha(30);
+      textColor = Colors.green;
+    } else {
+      label = 'UNPAID';
+      bgColor = Colors.red.withAlpha(30);
+      textColor = Colors.red;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
