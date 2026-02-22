@@ -1,8 +1,22 @@
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/services/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+const _statusFlow = ['pending', 'accepted', 'in_kitchen', 'handed_to_rider', 'on_the_way', 'delivered'];
+
+const _statusLabels = {
+  'pending': 'Pending',
+  'accepted': 'Accepted',
+  'in_kitchen': 'In Kitchen',
+  'handed_to_rider': 'Handed to Rider',
+  'on_the_way': 'On the Way',
+  'delivered': 'Delivered',
+};
 
 class OrdersView extends StatefulWidget {
   const OrdersView({super.key});
@@ -35,75 +49,66 @@ class _OrdersViewState extends State<OrdersView> {
         ),
         const SizedBox(height: 16),
         Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: _firestore
-                      .collection('restaurants')
-                      .doc(user?.uid)
-                      .collection('orders')
-                      .orderBy('createdAt', descending: true)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return _buildOrdersSkeleton();
-                    }
-                    if (snapshot.hasError) {
-                      debugPrint('[RestaurantOrders] Orders stream error: ${snapshot.error}');
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (context.mounted) {
-                          showAppToast(context, 'Unable to load orders. Please try again.');
-                        }
-                      });
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(RadixIcons.crossCircled,
-                                size: 48,
-                                color: theme.colorScheme.destructive),
-                            const SizedBox(height: 16),
-                            const Text('Unable to load orders').semiBold(),
-                          ],
-                        ),
-                      );
-                    }
-                    if (!snapshot.hasData ||
-                        snapshot.data!.docs.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(RadixIcons.archive,
-                                size: 48,
-                                color:
-                                    theme.colorScheme.mutedForeground),
-                            const SizedBox(height: 16),
-                            const Text('No orders yet').semiBold(),
-                            const SizedBox(height: 8),
-                            const Text(
-                                    'Orders will appear here when\ncustomers place them')
-                                .muted()
-                                .small(),
-                          ],
-                        ),
-                      );
-                    }
-                    final orders = snapshot.data!.docs;
-                    return ListView.separated(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 20),
-                      itemCount: orders.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final order = orders[index].data()
-                            as Map<String, dynamic>;
-                        final orderId = orders[index].id;
-                        return _buildOrderCard(theme, order, orderId);
-                      },
-                    );
-                  },
-                ),
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('restaurants')
+                .doc(user?.uid)
+                .collection('orders')
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return _buildOrdersSkeleton();
+              }
+              if (snapshot.hasError) {
+                debugPrint('[RestaurantOrders] Orders stream error: ${snapshot.error}');
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) {
+                    showAppToast(context, 'Unable to load orders. Please try again.');
+                  }
+                });
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(RadixIcons.crossCircled,
+                          size: 48, color: theme.colorScheme.destructive),
+                      const SizedBox(height: 16),
+                      const Text('Unable to load orders').semiBold(),
+                    ],
+                  ),
+                );
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(RadixIcons.archive,
+                          size: 48, color: theme.colorScheme.mutedForeground),
+                      const SizedBox(height: 16),
+                      const Text('No orders yet').semiBold(),
+                      const SizedBox(height: 8),
+                      const Text('Orders will appear here when\ncustomers place them')
+                          .muted()
+                          .small(),
+                    ],
+                  ),
+                );
+              }
+              final orders = snapshot.data!.docs;
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: orders.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final order = orders[index].data() as Map<String, dynamic>;
+                  final orderId = orders[index].id;
+                  return _buildOrderCard(theme, order, orderId);
+                },
+              );
+            },
+          ),
         ),
       ],
     );
@@ -150,6 +155,10 @@ class _OrdersViewState extends State<OrdersView> {
   Widget _buildOrderCard(
       ThemeData theme, Map<String, dynamic> order, String orderId) {
     final status = order['status'] ?? 'pending';
+    final customerLat = (order['customerLat'] as num?)?.toDouble();
+    final customerLng = (order['customerLng'] as num?)?.toDouble();
+    final customerAddress = order['customerAddress'] as String?;
+    final estimatedMinutes = order['estimatedMinutes'] as int?;
 
     return Container(
       decoration: BoxDecoration(
@@ -177,16 +186,75 @@ class _OrdersViewState extends State<OrdersView> {
               .small(),
           const SizedBox(height: 4),
           Text('Items: ${order['itemCount'] ?? 0}').muted().small(),
+          if (customerAddress != null && customerAddress.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(RadixIcons.pinTop, size: 12, color: theme.colorScheme.mutedForeground),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(customerAddress, maxLines: 1, overflow: TextOverflow.ellipsis)
+                      .muted()
+                      .small(),
+                ),
+              ],
+            ),
+          ],
+          if (estimatedMinutes != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(RadixIcons.clock, size: 12, color: theme.colorScheme.primary),
+                const SizedBox(width: 4),
+                Text('ETA: $estimatedMinutes min',
+                    style: TextStyle(color: theme.colorScheme.primary, fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ],
           const SizedBox(height: 4),
           Text(
-            '\$${order['total']?.toStringAsFixed(2) ?? '0.00'}',
+            '${order['total']?.toStringAsFixed(2) ?? '0.00'} PKR',
             style: TextStyle(
               color: theme.colorScheme.primary,
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (customerLat != null && customerLng != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 120,
+                child: IgnorePointer(
+                  child: FlutterMap(
+                    options: MapOptions(
+                      initialCenter: LatLng(customerLat, customerLng),
+                      initialZoom: 14,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.speakdine.app',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(customerLat, customerLng),
+                            width: 32,
+                            height: 32,
+                            child: Icon(RadixIcons.crosshair1,
+                                size: 32, color: theme.colorScheme.primary),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
-          _buildActionButtons(theme, orderId, status),
+          _buildActionButtons(theme, order, orderId, status),
         ],
       ),
     );
@@ -199,19 +267,27 @@ class _OrdersViewState extends State<OrdersView> {
       case 'pending':
         bgColor = Colors.orange.withAlpha(30);
         textColor = Colors.orange;
-      case 'preparing':
+      case 'accepted':
         bgColor = Colors.blue.withAlpha(30);
         textColor = Colors.blue;
-      case 'ready':
+      case 'in_kitchen':
+        bgColor = Colors.indigo.withAlpha(30);
+        textColor = Colors.indigo;
+      case 'handed_to_rider':
+        bgColor = Colors.purple.withAlpha(30);
+        textColor = Colors.purple;
+      case 'on_the_way':
+        bgColor = Colors.teal.withAlpha(30);
+        textColor = Colors.teal;
+      case 'delivered':
         bgColor = Colors.green.withAlpha(30);
         textColor = Colors.green;
-      case 'completed':
-        bgColor = theme.colorScheme.primary.withAlpha(30);
-        textColor = theme.colorScheme.primary;
       default:
         bgColor = theme.colorScheme.muted;
         textColor = theme.colorScheme.mutedForeground;
     }
+
+    final label = _statusLabels[status] ?? status.toUpperCase();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -220,7 +296,7 @@ class _OrdersViewState extends State<OrdersView> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        status.toUpperCase(),
+        label.toUpperCase(),
         style: TextStyle(
           color: textColor,
           fontSize: 11,
@@ -231,49 +307,171 @@ class _OrdersViewState extends State<OrdersView> {
   }
 
   Widget _buildActionButtons(
-      ThemeData theme, String orderId, String status) {
-    if (status == 'completed') return const SizedBox.shrink();
+      ThemeData theme, Map<String, dynamic> order, String orderId, String status) {
+    if (status == 'delivered') return const SizedBox.shrink();
 
-    String label;
-    String nextStatus;
-    switch (status) {
-      case 'pending':
-        label = 'Accept';
-        nextStatus = 'preparing';
-      case 'preparing':
-        label = 'Mark Ready';
-        nextStatus = 'ready';
-      case 'ready':
-        label = 'Complete';
-        nextStatus = 'completed';
-      default:
-        return const SizedBox.shrink();
+    if (status == 'pending') {
+      return SizedBox(
+        width: double.infinity,
+        child: PrimaryButton(
+          onPressed: () => _showAcceptDialog(theme, order, orderId),
+          child: const Text('Accept Order'),
+        ),
+      );
     }
+
+    final currentIndex = _statusFlow.indexOf(status);
+    if (currentIndex < 0 || currentIndex >= _statusFlow.length - 1) {
+      return const SizedBox.shrink();
+    }
+
+    final nextStatus = _statusFlow[currentIndex + 1];
+    final nextLabel = _statusLabels[nextStatus] ?? nextStatus;
 
     return SizedBox(
       width: double.infinity,
       child: PrimaryButton(
-        density: ButtonDensity.compact,
-        onPressed: () => _updateOrderStatus(orderId, nextStatus),
-        child: Text(label),
+        onPressed: () => _advanceStatus(orderId, order, nextStatus),
+        child: Text('Mark: $nextLabel'),
       ),
     );
   }
 
-  Future<void> _updateOrderStatus(String orderId, String status) async {
+  void _showAcceptDialog(ThemeData theme, Map<String, dynamic> order, String orderId) {
+    final etaController = TextEditingController(text: '30');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Accept Order'),
+        content: SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Order from ${order['customerName'] ?? 'Customer'}').muted().small(),
+              const SizedBox(height: 16),
+              const Text('Estimated delivery time (minutes)').semiBold().small(),
+              const SizedBox(height: 6),
+              TextField(
+                controller: etaController,
+                placeholder: const Text('30'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          OutlineButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          PrimaryButton(
+            onPressed: () async {
+              final minutes = int.tryParse(etaController.text) ?? 30;
+              Navigator.pop(ctx);
+              await _acceptOrder(orderId, order, minutes);
+            },
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _acceptOrder(String orderId, Map<String, dynamic> order, int estimatedMinutes) async {
     try {
       await _firestore
           .collection('restaurants')
           .doc(user?.uid)
           .collection('orders')
           .doc(orderId)
-          .update({'status': status});
+          .update({
+        'status': 'accepted',
+        'estimatedMinutes': estimatedMinutes,
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      final customerId = order['customerId'] as String?;
+      final customerOrderId = order['customerOrderId'] as String?;
+      if (customerId != null && customerOrderId != null) {
+        await _syncCustomerOrderStatus(customerId, customerOrderId, 'accepted',
+            estimatedMinutes: estimatedMinutes);
+
+        await NotificationService.createNotification(
+          userId: customerId,
+          title: 'Order Accepted!',
+          message: 'Estimated delivery: $estimatedMinutes minutes',
+          orderId: orderId,
+        );
+      }
 
       if (!mounted) return;
-      showAppToast(context, 'Order status updated to $status');
+      showAppToast(context, 'Order accepted');
     } catch (e) {
+      debugPrint('[OrdersView] Accept error: $e');
       if (!mounted) return;
       showAppToast(context, 'Something went wrong. Please try again later.');
+    }
+  }
+
+  Future<void> _advanceStatus(String orderId, Map<String, dynamic> order, String nextStatus) async {
+    try {
+      await _firestore
+          .collection('restaurants')
+          .doc(user?.uid)
+          .collection('orders')
+          .doc(orderId)
+          .update({'status': nextStatus});
+
+      final customerId = order['customerId'] as String?;
+      final customerOrderId = order['customerOrderId'] as String?;
+      if (customerId != null && customerOrderId != null) {
+        await _syncCustomerOrderStatus(customerId, customerOrderId, nextStatus);
+
+        if (nextStatus == 'handed_to_rider') {
+          await NotificationService.createNotification(
+            userId: customerId,
+            title: 'Order Picked Up!',
+            message: 'Your order has been handed to the rider.',
+            orderId: orderId,
+          );
+        } else if (nextStatus == 'delivered') {
+          await NotificationService.createNotification(
+            userId: customerId,
+            title: 'Order Delivered!',
+            message: 'Your order has been delivered. Enjoy your meal!',
+            orderId: orderId,
+          );
+        }
+      }
+
+      if (!mounted) return;
+      showAppToast(context, 'Status updated to ${_statusLabels[nextStatus] ?? nextStatus}');
+    } catch (e) {
+      debugPrint('[OrdersView] Status update error: $e');
+      if (!mounted) return;
+      showAppToast(context, 'Something went wrong. Please try again later.');
+    }
+  }
+
+  Future<void> _syncCustomerOrderStatus(
+      String customerId, String customerOrderId, String status,
+      {int? estimatedMinutes}) async {
+    try {
+      final updateData = <String, dynamic>{'status': status};
+      if (estimatedMinutes != null) {
+        updateData['estimatedMinutes'] = estimatedMinutes;
+        updateData['acceptedAt'] = FieldValue.serverTimestamp();
+      }
+      await _firestore
+          .collection('users')
+          .doc(customerId)
+          .collection('orders')
+          .doc(customerOrderId)
+          .update(updateData);
+    } catch (e) {
+      debugPrint('[OrdersView] Sync customer order error: $e');
     }
   }
 }

@@ -124,22 +124,121 @@ class _RestaurantDetailViewState extends State<RestaurantDetailView> {
                 );
               }
               final items = snapshot.data!.docs;
-              return ListView.separated(
+              return ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final item =
-                      items[index].data() as Map<String, dynamic>;
-                  final itemId = items[index].id;
-                  return _buildMenuItem(theme, item, itemId);
-                },
+                children: [
+                  ...items.map((doc) {
+                    final item = doc.data() as Map<String, dynamic>;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildMenuItem(theme, item, doc.id),
+                    );
+                  }),
+                  const SizedBox(height: 24),
+                  _buildReviewsSection(theme),
+                  const SizedBox(height: 20),
+                ],
               );
             },
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildReviewsSection(ThemeData theme) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('restaurants')
+          .doc(widget.restaurantId)
+          .collection('reviews')
+          .orderBy('createdAt', descending: true)
+          .limit(10)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final reviews = snapshot.data!.docs;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            const Text('Reviews').semiBold(),
+            const SizedBox(height: 12),
+            ...reviews.map((doc) {
+              final review = doc.data() as Map<String, dynamic>;
+              return _buildReviewCard(theme, review);
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildReviewCard(ThemeData theme, Map<String, dynamic> review) {
+    final rating = review['rating'] as int? ?? 0;
+    final comment = review['comment'] as String? ?? '';
+    final customerName = review['customerName'] as String? ?? 'Customer';
+    final createdAt = review['createdAt'] as Timestamp?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.card,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(customerName).semiBold().small()),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(5, (i) => Icon(
+                    RadixIcons.star,
+                    size: 14,
+                    color: i < rating
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.muted,
+                  )),
+                ),
+              ],
+            ),
+            if (comment.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(comment).muted().small(),
+            ],
+            if (createdAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                _formatTimeAgo(createdAt.toDate()),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.mutedForeground,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTimeAgo(DateTime date) {
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${(diff.inDays / 7).floor()}w ago';
   }
 
   Widget _buildMenuSkeleton() {
@@ -231,15 +330,27 @@ class _RestaurantDetailViewState extends State<RestaurantDetailView> {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty
+                  ? Image.network(
+                      item['imageUrl'],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                        child: Icon(RadixIcons.reader,
+                            size: 18, color: theme.colorScheme.primary),
+                      ),
+                    )
+                  : Container(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      child: Icon(RadixIcons.reader,
+                          size: 18, color: theme.colorScheme.primary),
+                    ),
             ),
-            child: Icon(RadixIcons.reader,
-                size: 18, color: theme.colorScheme.primary),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -258,7 +369,7 @@ class _RestaurantDetailViewState extends State<RestaurantDetailView> {
                 ],
                 const SizedBox(height: 2),
                 Text(
-                  '\$${item['price']?.toStringAsFixed(2) ?? '0.00'}',
+                  '${item['price']?.toStringAsFixed(2) ?? '0.00'} PKR',
                   style: TextStyle(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w700,

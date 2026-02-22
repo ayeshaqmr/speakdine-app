@@ -1,6 +1,8 @@
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/widgets/location_picker.dart';
+import 'package:speak_dine/services/image_upload_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
@@ -22,6 +24,11 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _uploadingPhoto = false;
+  double? _lat;
+  double? _lng;
+  String _address = '';
+  String? _photoUrl;
 
   @override
   void initState() {
@@ -46,6 +53,10 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
         _nameController.text = profile['name'] ?? '';
         _emailController.text = profile['email'] ?? _user?.email ?? '';
         _phoneController.text = profile['phone'] ?? '';
+        _lat = (profile['lat'] as num?)?.toDouble();
+        _lng = (profile['lng'] as num?)?.toDouble();
+        _address = profile['address'] ?? '';
+        _photoUrl = profile['photoUrl'] as String?;
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
@@ -53,15 +64,44 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _pickAndUploadPhoto() async {
+    final file = await ImageUploadService.pickImage();
+    if (file == null) return;
+
+    setState(() => _uploadingPhoto = true);
+    final url = await ImageUploadService.uploadProfileImage(
+      userId: _user?.uid ?? '',
+      imageFile: file,
+    );
+    if (url != null) {
+      _photoUrl = url;
+      await _firestore
+          .collection('users')
+          .doc(_user?.uid)
+          .update({'photoUrl': url});
+      if (mounted) showAppToast(context, 'Photo updated');
+    } else {
+      if (mounted) showAppToast(context, 'Photo upload failed. Please try again.');
+    }
+    if (mounted) setState(() => _uploadingPhoto = false);
+  }
+
   Future<void> _saveProfile() async {
     setState(() => _saving = true);
     try {
-      await _firestore.collection('users').doc(_user?.uid).update({
+      final data = <String, dynamic>{
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (_lat != null && _lng != null) {
+        data['lat'] = _lat;
+        data['lng'] = _lng;
+        data['address'] = _address;
+      }
+      if (_photoUrl != null) data['photoUrl'] = _photoUrl;
+      await _firestore.collection('users').doc(_user?.uid).update(data);
 
       if (!mounted) return;
       showAppToast(context, 'Profile updated successfully');
@@ -70,6 +110,31 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
       showAppToast(context, 'Something went wrong. Please try again later.');
     }
     if (mounted) setState(() => _saving = false);
+  }
+
+  void _openLocationPicker() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pick Your Location'),
+        content: SizedBox(
+          width: 400,
+          height: 450,
+          child: LocationPicker(
+            initialLat: _lat,
+            initialLng: _lng,
+            onLocationSelected: (lat, lng, address) {
+              setState(() {
+                _lat = lat;
+                _lng = lng;
+                _address = address;
+              });
+              Navigator.pop(ctx);
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _logout() async {
@@ -97,21 +162,118 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
                 .small(),
             const SizedBox(height: 24),
             Center(
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+              child: GestureDetector(
+                onTap: _uploadingPhoto ? null : _pickAndUploadPhoto,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _uploadingPhoto
+                          ? Center(
+                              child: SizedBox.square(
+                                dimension: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            )
+                          : _photoUrl != null && _photoUrl!.isNotEmpty
+                              ? Image.network(
+                                  _photoUrl!,
+                                  width: 80,
+                                  height: 80,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    RadixIcons.person,
+                                    size: 36,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                )
+                              : Icon(RadixIcons.person,
+                                  size: 36, color: theme.colorScheme.primary),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(RadixIcons.camera,
+                            size: 14,
+                            color: theme.colorScheme.primaryForeground),
+                      ),
+                    ),
+                  ],
                 ),
-                child: Icon(RadixIcons.person,
-                    size: 36, color: theme.colorScheme.primary),
               ),
             ),
             const SizedBox(height: 32),
             _labeledField('Name', _nameController, 'Your name'),
             _labeledField('Email', _emailController, 'Email address'),
             _labeledField('Phone', _phoneController, 'Phone number'),
+            const SizedBox(height: 8),
+            const Text('Delivery Location').semiBold().small(),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_address.isNotEmpty) ...[
+                    Row(
+                      children: [
+                        Icon(RadixIcons.pinTop,
+                            size: 16, color: theme.colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _address,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ).small(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlineButton(
+                      onPressed: _openLocationPicker,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(RadixIcons.crosshair1,
+                              size: 14, color: theme.colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Text(_address.isEmpty
+                              ? 'Set Location'
+                              : 'Change Location'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,

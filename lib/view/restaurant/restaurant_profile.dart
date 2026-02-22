@@ -1,9 +1,17 @@
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/services/image_upload_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
+
+const _hourOptions = [
+  '12:00 AM', '01:00 AM', '02:00 AM', '03:00 AM', '04:00 AM', '05:00 AM',
+  '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+  '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM',
+  '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM',
+];
 
 class RestaurantProfileView extends StatefulWidget {
   const RestaurantProfileView({super.key});
@@ -25,6 +33,10 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _uploadingCover = false;
+  String? _coverImageUrl;
+  String? _openTime;
+  String? _closeTime;
 
   @override
   void initState() {
@@ -53,6 +65,9 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
         _phoneController.text = data['phone'] ?? '';
         _addressController.text = data['address'] ?? '';
         _descriptionController.text = data['description'] ?? '';
+        _coverImageUrl = data['coverImageUrl'] as String?;
+        _openTime = data['openTime'] as String?;
+        _closeTime = data['closeTime'] as String?;
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
@@ -60,17 +75,44 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _pickCoverImage() async {
+    final file = await ImageUploadService.pickImage();
+    if (file == null) return;
+
+    setState(() => _uploadingCover = true);
+    final url = await ImageUploadService.uploadProfileImage(
+      userId: user?.uid ?? '',
+      imageFile: file,
+    );
+    if (url != null) {
+      _coverImageUrl = url;
+      await _firestore
+          .collection('restaurants')
+          .doc(user?.uid)
+          .update({'coverImageUrl': url});
+      if (mounted) showAppToast(context, 'Cover image updated');
+    } else {
+      if (mounted) showAppToast(context, 'Upload failed. Please try again.');
+    }
+    if (mounted) setState(() => _uploadingCover = false);
+  }
+
   Future<void> _saveProfile() async {
     setState(() => _saving = true);
     try {
-      await _firestore.collection('restaurants').doc(user?.uid).update({
+      final data = <String, dynamic>{
         'restaurantName': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
         'description': _descriptionController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (_coverImageUrl != null) data['coverImageUrl'] = _coverImageUrl;
+      if (_openTime != null) data['openTime'] = _openTime;
+      if (_closeTime != null) data['closeTime'] = _closeTime;
+
+      await _firestore.collection('restaurants').doc(user?.uid).update(data);
 
       if (!mounted) return;
       showAppToast(context, 'Profile updated successfully');
@@ -105,34 +147,25 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
                 .muted()
                 .small(),
             const SizedBox(height: 24),
-                  Center(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.muted,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(RadixIcons.home,
-                          size: 36, color: theme.colorScheme.primary),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  _labeledField(
-                      'Restaurant Name', _nameController, 'Restaurant name'),
-                  _labeledField('Email', _emailController, 'Email address'),
-                  _labeledField('Phone', _phoneController, 'Phone number'),
-                  _labeledField('Address', _addressController, 'Address'),
-                  _labeledField('Description', _descriptionController,
-                      'About your place'),
-            const SizedBox(height: 16),
+            _buildCoverImagePicker(theme),
+            const SizedBox(height: 24),
+            _labeledField(
+                'Restaurant Name', _nameController, 'Restaurant name'),
+            _labeledField('Email', _emailController, 'Email address'),
+            _labeledField('Phone', _phoneController, 'Phone number'),
+            _labeledField('Address', _addressController, 'Address'),
+            _labeledField('Description', _descriptionController,
+                'About your place'),
+            const Text('Business Hours').semiBold().small(),
+            const SizedBox(height: 6),
+            _buildBusinessHours(theme),
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: _saving
                   ? Center(
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
+                      child: SizedBox.square(
+                        dimension: 28,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
                           color: theme.colorScheme.primary,
@@ -170,6 +203,139 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildCoverImagePicker(ThemeData theme) {
+    return GestureDetector(
+      onTap: _uploadingCover ? null : _pickCoverImage,
+      child: Container(
+        height: 160,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.2),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _uploadingCover
+            ? Center(
+                child: SizedBox.square(
+                  dimension: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              )
+            : _coverImageUrl != null && _coverImageUrl!.isNotEmpty
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        _coverImageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            _coverPlaceholder(theme),
+                      ),
+                      Positioned(
+                        bottom: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.background
+                                .withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(RadixIcons.camera,
+                                  size: 14, color: theme.colorScheme.primary),
+                              const SizedBox(width: 6),
+                              Text('Change',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : _coverPlaceholder(theme),
+      ),
+    );
+  }
+
+  Widget _coverPlaceholder(ThemeData theme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(RadixIcons.image, size: 32, color: theme.colorScheme.primary),
+        const SizedBox(height: 8),
+        const Text('Tap to add a cover photo').muted().small(),
+      ],
+    );
+  }
+
+  Widget _buildBusinessHours(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Open').muted().small(),
+              const SizedBox(height: 4),
+              Select<String>(
+                value: _openTime,
+                onChanged: (value) => setState(() => _openTime = value),
+                itemBuilder: (context, item) => Text(item),
+                placeholder: const Text('Open time'),
+                popupConstraints: const BoxConstraints(maxHeight: 250),
+                popup: SelectPopup(
+                  items: SelectItemList(
+                    children: _hourOptions
+                        .map((h) => SelectItemButton(value: h, child: Text(h)))
+                        .toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Close').muted().small(),
+              const SizedBox(height: 4),
+              Select<String>(
+                value: _closeTime,
+                onChanged: (value) => setState(() => _closeTime = value),
+                itemBuilder: (context, item) => Text(item),
+                placeholder: const Text('Close time'),
+                popupConstraints: const BoxConstraints(maxHeight: 250),
+                popup: SelectPopup(
+                  items: SelectItemList(
+                    children: _hourOptions
+                        .map((h) => SelectItemButton(value: h, child: Text(h)))
+                        .toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

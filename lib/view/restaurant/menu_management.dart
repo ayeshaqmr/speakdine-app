@@ -1,6 +1,7 @@
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/services/image_upload_service.dart';
 import 'package:flutter/material.dart' show FloatingActionButton;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -203,15 +204,27 @@ class _MenuManagementViewState extends State<MenuManagementView> {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty
+                  ? Image.network(
+                      item['imageUrl'],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                        child: Icon(RadixIcons.reader,
+                            size: 18, color: theme.colorScheme.primary),
+                      ),
+                    )
+                  : Container(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      child: Icon(RadixIcons.reader,
+                          size: 18, color: theme.colorScheme.primary),
+                    ),
             ),
-            child: Icon(RadixIcons.reader,
-                size: 18, color: theme.colorScheme.primary),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -230,7 +243,7 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                 ],
                 const SizedBox(height: 2),
                 Text(
-                  '\$${item['price']?.toStringAsFixed(2) ?? '0.00'}',
+                  '${item['price']?.toStringAsFixed(2) ?? '0.00'} PKR',
                   style: TextStyle(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w700,
@@ -260,6 +273,8 @@ class _MenuManagementViewState extends State<MenuManagementView> {
     final descController = TextEditingController();
     final priceController = TextEditingController();
     String? selectedCategory;
+    XFile? pickedImage;
+    bool uploading = false;
 
     showDialog(
       context: context,
@@ -273,6 +288,52 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text('Image').semiBold().small(),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () async {
+                      final file = await ImageUploadService.pickImage();
+                      if (file != null) {
+                        setDialogState(() => pickedImage = file);
+                      }
+                    },
+                    child: Container(
+                      height: 120,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                          style: BorderStyle.solid,
+                        ),
+                      ),
+                      child: pickedImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: FutureBuilder<List<int>>(
+                                future: pickedImage!.readAsBytes(),
+                                builder: (context, snap) {
+                                  if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                                  return Image.memory(
+                                    snap.data! as dynamic,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                  );
+                                },
+                              ),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(RadixIcons.image, size: 28, color: theme.colorScheme.primary),
+                                const SizedBox(height: 6),
+                                const Text('Tap to add image (optional)').muted().small(),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   const Text('Name').semiBold().small(),
                   const SizedBox(height: 6),
                   TextField(
@@ -302,8 +363,6 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                     placeholder: const Text('Select a category'),
                     popupConstraints: const BoxConstraints(maxHeight: 300),
                     popup: SelectPopup(
-                      searchFilter: (item, query) =>
-                          item.toLowerCase().contains(query.toLowerCase()),
                       items: SelectItemList(
                         children: _menuCategories
                             .map((cat) => SelectItemButton(
@@ -320,21 +379,39 @@ class _MenuManagementViewState extends State<MenuManagementView> {
           ),
           actions: [
             OutlineButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: uploading ? null : () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            PrimaryButton(
-              onPressed: () {
-                _addItem(
-                  nameController.text,
-                  descController.text,
-                  double.tryParse(priceController.text) ?? 0,
-                  selectedCategory ?? '',
-                );
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add'),
-            ),
+            uploading
+                ? SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: theme.colorScheme.primary,
+                    ),
+                  )
+                : PrimaryButton(
+                    onPressed: () async {
+                      setDialogState(() => uploading = true);
+                      String? imageUrl;
+                      if (pickedImage != null) {
+                        imageUrl = await ImageUploadService.uploadMenuImage(
+                          restaurantId: user?.uid ?? '',
+                          imageFile: pickedImage!,
+                        );
+                      }
+                      await _addItem(
+                        nameController.text,
+                        descController.text,
+                        double.tryParse(priceController.text) ?? 0,
+                        selectedCategory ?? '',
+                        imageUrl: imageUrl,
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                    child: const Text('Add'),
+                  ),
           ],
         ),
       ),
@@ -355,6 +432,9 @@ class _MenuManagementViewState extends State<MenuManagementView> {
       selectedCategory = 'Other';
     }
     if (selectedCategory?.isEmpty ?? true) selectedCategory = null;
+    String? existingImageUrl = item['imageUrl'] as String?;
+    XFile? pickedImage;
+    bool uploading = false;
 
     showDialog(
       context: context,
@@ -368,6 +448,57 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text('Image').semiBold().small(),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () async {
+                      final file = await ImageUploadService.pickImage();
+                      if (file != null) {
+                        setDialogState(() {
+                          pickedImage = file;
+                          existingImageUrl = null;
+                        });
+                      }
+                    },
+                    child: Container(
+                      height: 120,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: pickedImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: FutureBuilder<List<int>>(
+                                future: pickedImage!.readAsBytes(),
+                                builder: (context, snap) {
+                                  if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                                  return Image.memory(
+                                    snap.data! as dynamic,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                  );
+                                },
+                              ),
+                            )
+                          : existingImageUrl != null && existingImageUrl!.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.network(
+                                    existingImageUrl!,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    errorBuilder: (_, __, ___) => _imagePickerPlaceholder(theme),
+                                  ),
+                                )
+                              : _imagePickerPlaceholder(theme),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   const Text('Name').semiBold().small(),
                   const SizedBox(height: 6),
                   TextField(
@@ -397,8 +528,6 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                     placeholder: const Text('Select a category'),
                     popupConstraints: const BoxConstraints(maxHeight: 300),
                     popup: SelectPopup(
-                      searchFilter: (item, query) =>
-                          item.toLowerCase().contains(query.toLowerCase()),
                       items: SelectItemList(
                         children: _menuCategories
                             .map((cat) => SelectItemButton(
@@ -415,46 +544,78 @@ class _MenuManagementViewState extends State<MenuManagementView> {
           ),
           actions: [
             OutlineButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: uploading ? null : () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            PrimaryButton(
-              onPressed: () {
-                _updateItem(
-                  itemId,
-                  nameController.text,
-                  descController.text,
-                  double.tryParse(priceController.text) ?? 0,
-                  selectedCategory ?? '',
-                );
-                Navigator.pop(ctx);
-              },
-              child: const Text('Save'),
-            ),
+            uploading
+                ? SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: theme.colorScheme.primary,
+                    ),
+                  )
+                : PrimaryButton(
+                    onPressed: () async {
+                      setDialogState(() => uploading = true);
+                      String? imageUrl = existingImageUrl;
+                      if (pickedImage != null) {
+                        imageUrl = await ImageUploadService.uploadMenuImage(
+                          restaurantId: user?.uid ?? '',
+                          imageFile: pickedImage!,
+                        );
+                      }
+                      await _updateItem(
+                        itemId,
+                        nameController.text,
+                        descController.text,
+                        double.tryParse(priceController.text) ?? 0,
+                        selectedCategory ?? '',
+                        imageUrl: imageUrl,
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                    child: const Text('Save'),
+                  ),
           ],
         ),
       ),
     );
   }
 
+  Widget _imagePickerPlaceholder(ThemeData theme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(RadixIcons.image, size: 28, color: theme.colorScheme.primary),
+        const SizedBox(height: 6),
+        const Text('Tap to change image').muted().small(),
+      ],
+    );
+  }
+
   Future<void> _addItem(
-      String name, String description, double price, String category) async {
+      String name, String description, double price, String category,
+      {String? imageUrl}) async {
     if (name.isEmpty) {
       showAppToast(context, 'Item name is required');
       return;
     }
     try {
-      await _firestore
-          .collection('restaurants')
-          .doc(user?.uid)
-          .collection('menu')
-          .add({
+      final data = <String, dynamic>{
         'name': name,
         'description': description,
         'price': price,
         'category': category,
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (imageUrl != null) data['imageUrl'] = imageUrl;
+      await _firestore
+          .collection('restaurants')
+          .doc(user?.uid)
+          .collection('menu')
+          .add(data);
       if (!mounted) return;
       showAppToast(context, '$name added to menu');
     } catch (e) {
@@ -464,19 +625,22 @@ class _MenuManagementViewState extends State<MenuManagementView> {
   }
 
   Future<void> _updateItem(String itemId, String name, String description,
-      double price, String category) async {
+      double price, String category,
+      {String? imageUrl}) async {
     try {
+      final data = <String, dynamic>{
+        'name': name,
+        'description': description,
+        'price': price,
+        'category': category,
+      };
+      if (imageUrl != null) data['imageUrl'] = imageUrl;
       await _firestore
           .collection('restaurants')
           .doc(user?.uid)
           .collection('menu')
           .doc(itemId)
-          .update({
-        'name': name,
-        'description': description,
-        'price': price,
-        'category': category,
-      });
+          .update(data);
       if (!mounted) return;
       showAppToast(context, '$name updated');
     } catch (e) {

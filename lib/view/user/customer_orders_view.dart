@@ -3,6 +3,19 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/view/user/order_tracking_view.dart';
+import 'package:speak_dine/view/user/review_dialog.dart';
+
+const _activeStatuses = {'pending', 'accepted', 'in_kitchen', 'handed_to_rider', 'on_the_way'};
+
+const _statusDisplayLabels = {
+  'pending': 'Pending',
+  'accepted': 'Accepted',
+  'in_kitchen': 'In Kitchen',
+  'handed_to_rider': 'With Rider',
+  'on_the_way': 'On the Way',
+  'delivered': 'Delivered',
+};
 
 class CustomerOrdersView extends StatelessWidget {
   const CustomerOrdersView({super.key});
@@ -84,9 +97,9 @@ class CustomerOrdersView extends StatelessWidget {
                 itemCount: orders.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
-                  final order =
-                      orders[index].data() as Map<String, dynamic>;
-                  return _buildOrderCard(theme, order);
+                  final doc = orders[index];
+                  final order = doc.data() as Map<String, dynamic>;
+                  return _buildOrderCard(context, theme, order, doc.id, user);
                 },
               );
             },
@@ -124,51 +137,114 @@ class CustomerOrdersView extends StatelessWidget {
     );
   }
 
-  Widget _buildOrderCard(ThemeData theme, Map<String, dynamic> order) {
-    final status = order['status'] ?? 'pending';
+  Widget _buildOrderCard(BuildContext context, ThemeData theme,
+      Map<String, dynamic> order, String orderId, User? user) {
+    final status = order['status'] as String? ?? 'pending';
     final restaurantName = order['restaurantName'] ?? 'Restaurant';
     final itemCount = order['itemCount'] ?? 0;
     final total = order['total']?.toStringAsFixed(2) ?? '0.00';
+    final isActive = _activeStatuses.contains(status);
+    final isDelivered = status == 'delivered';
+    final reviewed = order['reviewed'] == true;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.2),
-        ),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(restaurantName).semiBold(),
-              ),
-              _buildStatusChip(theme, status),
-            ],
+    return GestureDetector(
+      onTap: isActive || isDelivered
+          ? () {
+              Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute(
+                  builder: (_) => OrderTrackingView(
+                    orderId: orderId,
+                    restaurantName: restaurantName,
+                  ),
+                ),
+              );
+            }
+          : null,
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive
+                ? theme.colorScheme.primary.withValues(alpha: 0.4)
+                : theme.colorScheme.primary.withValues(alpha: 0.2),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Icon(RadixIcons.archive,
-                  size: 14, color: theme.colorScheme.mutedForeground),
-              const SizedBox(width: 6),
-              Text('$itemCount items').muted().small(),
-              const Spacer(),
-              Text(
-                '\$$total',
-                style: TextStyle(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w700,
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: Text(restaurantName).semiBold()),
+                _buildStatusChip(theme, status),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(RadixIcons.archive,
+                    size: 14, color: theme.colorScheme.mutedForeground),
+                const SizedBox(width: 6),
+                Text('$itemCount items').muted().small(),
+                const Spacer(),
+                Text(
+                  '$total PKR',
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            if (isActive) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(RadixIcons.arrowRight,
+                      size: 12, color: theme.colorScheme.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Tap to track',
+                    style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (isDelivered && !reviewed) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlineButton(
+                  density: ButtonDensity.compact,
+                  onPressed: () {
+                    showReviewDialog(
+                      context,
+                      restaurantId: order['restaurantId'] ?? '',
+                      restaurantName: restaurantName,
+                      orderId: orderId,
+                      customerId: user?.uid ?? '',
+                      customerName: order['customerName'] ?? 'Customer',
+                    );
+                  },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(RadixIcons.star, size: 14, color: theme.colorScheme.primary),
+                      const SizedBox(width: 6),
+                      const Text('Rate & Review'),
+                    ],
+                  ),
                 ),
               ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -180,19 +256,27 @@ class CustomerOrdersView extends StatelessWidget {
       case 'pending':
         bgColor = Colors.orange.withAlpha(30);
         textColor = Colors.orange;
-      case 'preparing':
+      case 'accepted':
         bgColor = Colors.blue.withAlpha(30);
         textColor = Colors.blue;
-      case 'ready':
+      case 'in_kitchen':
+        bgColor = Colors.indigo.withAlpha(30);
+        textColor = Colors.indigo;
+      case 'handed_to_rider':
+        bgColor = Colors.purple.withAlpha(30);
+        textColor = Colors.purple;
+      case 'on_the_way':
+        bgColor = Colors.teal.withAlpha(30);
+        textColor = Colors.teal;
+      case 'delivered':
         bgColor = Colors.green.withAlpha(30);
         textColor = Colors.green;
-      case 'completed':
-        bgColor = theme.colorScheme.primary.withAlpha(30);
-        textColor = theme.colorScheme.primary;
       default:
         bgColor = theme.colorScheme.muted;
         textColor = theme.colorScheme.mutedForeground;
     }
+
+    final label = _statusDisplayLabels[status] ?? status.toUpperCase();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -201,7 +285,7 @@ class CustomerOrdersView extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        status.toUpperCase(),
+        label.toUpperCase(),
         style: TextStyle(
           color: textColor,
           fontSize: 11,

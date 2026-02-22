@@ -41,6 +41,16 @@ class _CartViewState extends State<CartView> {
       final customerName = userData['name'] ?? 'Customer';
       final customerPhone = userData['phone'] ?? '';
       final customerEmail = userData['email'] ?? user.email ?? '';
+      final customerLat = (userData['lat'] as num?)?.toDouble();
+      final customerLng = (userData['lng'] as num?)?.toDouble();
+      final customerAddress = userData['address'] as String? ?? '';
+
+      if (customerLat == null || customerLng == null) {
+        if (!mounted) return;
+        setState(() => _placingOrder = false);
+        showAppToast(context, 'Please set your delivery location in your profile first.');
+        return;
+      }
 
       for (var entry in cartService.cart.entries) {
         final restaurantId = entry.key;
@@ -64,15 +74,25 @@ class _CartViewState extends State<CartView> {
           });
         }
 
-        await _firestore
+        final customerOrderRef = _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('orders')
+            .doc();
+
+        final restaurantOrderRef = await _firestore
             .collection('restaurants')
             .doc(restaurantId)
             .collection('orders')
             .add({
           'customerId': user.uid,
+          'customerOrderId': customerOrderRef.id,
           'customerName': customerName,
           'customerPhone': customerPhone,
           'customerEmail': customerEmail,
+          'customerLat': customerLat,
+          'customerLng': customerLng,
+          'customerAddress': customerAddress,
           'items': orderItems,
           'itemCount': totalQuantity,
           'total': restaurantTotal,
@@ -80,12 +100,9 @@ class _CartViewState extends State<CartView> {
           'createdAt': FieldValue.serverTimestamp(),
         });
 
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('orders')
-            .add({
+        await customerOrderRef.set({
           'restaurantId': restaurantId,
+          'restaurantOrderId': restaurantOrderRef.id,
           'restaurantName': items.first['restaurantName'] ?? 'Restaurant',
           'items': orderItems,
           'itemCount': totalQuantity,
@@ -315,7 +332,7 @@ class _CartViewState extends State<CartView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(item['name'] ?? 'Item').semiBold().small(),
-                Text('\$${item['price']?.toStringAsFixed(2) ?? '0.00'} each')
+                Text('${item['price']?.toStringAsFixed(2) ?? '0.00'} PKR each')
                     .muted()
                     .small(),
               ],
@@ -354,7 +371,7 @@ class _CartViewState extends State<CartView> {
           SizedBox(
             width: 64,
             child: Text(
-              '\$${itemTotal.toStringAsFixed(2)}',
+              '${itemTotal.toStringAsFixed(2)} PKR',
               textAlign: TextAlign.right,
               style: TextStyle(
                 color: theme.colorScheme.primary,
@@ -383,7 +400,7 @@ class _CartViewState extends State<CartView> {
             children: [
               Text('Total (${cartService.totalItems} items)').muted(),
               Text(
-                '\$${cartService.totalAmount.toStringAsFixed(2)}',
+                '${cartService.totalAmount.toStringAsFixed(2)} PKR',
                 style: TextStyle(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w700,
