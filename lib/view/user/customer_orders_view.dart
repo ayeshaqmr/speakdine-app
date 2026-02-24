@@ -3,6 +3,7 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:speak_dine/services/payment_service.dart';
 import 'package:speak_dine/view/user/order_tracking_view.dart';
 import 'package:speak_dine/view/user/review_dialog.dart';
 
@@ -17,8 +18,74 @@ const _statusDisplayLabels = {
   'delivered': 'Delivered',
 };
 
-class CustomerOrdersView extends StatelessWidget {
+class CustomerOrdersView extends StatefulWidget {
   const CustomerOrdersView({super.key});
+
+  @override
+  State<CustomerOrdersView> createState() => _CustomerOrdersViewState();
+}
+
+class _CustomerOrdersViewState extends State<CustomerOrdersView>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _verifyPendingPayments();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _verifyPendingPayments();
+    }
+  }
+
+  Future<void> _verifyPendingPayments() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('orders')
+        .where('paymentStatus', isEqualTo: 'pending')
+        .where('paymentMethod', isEqualTo: 'online')
+        .get();
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final sessionId = data['stripeSessionId'] as String?;
+      if (sessionId == null) continue;
+
+      final paid = await PaymentService.verifyCheckoutSession(sessionId);
+      if (paid) {
+        await doc.reference.update({
+          'paymentStatus': 'paid',
+          'status': 'pending',
+        });
+        final restaurantOrderId = data['restaurantOrderId'] as String?;
+        final restaurantId = data['restaurantId'] as String?;
+        if (restaurantOrderId != null && restaurantId != null) {
+          await FirebaseFirestore.instance
+              .collection('restaurants')
+              .doc(restaurantId)
+              .collection('orders')
+              .doc(restaurantOrderId)
+              .update({
+            'paymentStatus': 'paid',
+            'status': 'pending',
+          });
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +124,7 @@ class CustomerOrdersView extends StatelessWidget {
                 debugPrint('[CustomerOrders] Orders stream error: ${snapshot.error}');
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (context.mounted) {
-                    showAppToast(context, 'Unable to load orders. Please try again.');
+                    showAppToast(context, 'Unable to load orders. Please try again.', isError: true);
                   }
                 });
                 return Center(

@@ -2,7 +2,6 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:speak_dine/widgets/app_dock.dart';
 import 'package:speak_dine/view/restaurant/menu_management.dart';
 import 'package:speak_dine/view/restaurant/orders_view.dart';
-import 'package:speak_dine/view/restaurant/qr_code_view.dart';
 import 'package:speak_dine/view/restaurant/restaurant_profile.dart';
 import 'package:speak_dine/view/restaurant/restaurant_transactions_view.dart';
 
@@ -10,7 +9,6 @@ const _restaurantDockItems = [
   DockItem(icon: RadixIcons.reader, label: 'Menu'),
   DockItem(icon: RadixIcons.archive, label: 'Orders'),
   DockItem(icon: RadixIcons.cardStack, label: 'Payments'),
-  DockItem(icon: RadixIcons.viewGrid, label: 'QR Code'),
   DockItem(icon: RadixIcons.person, label: 'Profile'),
 ];
 
@@ -36,12 +34,13 @@ class _RestaurantShellState extends State<RestaurantShell> {
               Expanded(
                 child: IndexedStack(
                   index: _selectedIndex,
-                  children: const [
-                    MenuManagementView(),
-                    OrdersView(),
-                    RestaurantTransactionsView(),
-                    QRCodeView(),
-                    RestaurantProfileView(),
+                  children: [
+                    MenuManagementView(
+                      onGoToProfile: () => setState(() => _selectedIndex = 3),
+                    ),
+                    const OrdersView(),
+                    const RestaurantTransactionsView(),
+                    const RestaurantProfileView(),
                   ],
                 ),
               ),

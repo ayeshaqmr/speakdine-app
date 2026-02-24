@@ -17,9 +17,20 @@ class UserHomeView extends StatefulWidget {
   State<UserHomeView> createState() => _UserHomeViewState();
 }
 
+const _filterCategories = [
+  'All',
+  'Appetizers', 'Bakery', 'BBQ & Grills', 'Beverages', 'Biryani & Rice',
+  'Breakfast', 'Burgers', 'Chinese', 'Desi', 'Desserts', 'Fast Food',
+  'Healthy', 'Italian', 'Japanese', 'Mexican', 'Pasta', 'Pizza', 'Salads',
+  'Sandwiches', 'Seafood', 'Sides', 'Soups', 'Steaks', 'Sushi', 'Thai',
+  'Wraps', 'Other',
+];
+
 class _UserHomeViewState extends State<UserHomeView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String userName = 'Customer';
+  String _selectedCategory = 'All';
+  Map<String, Set<String>> _restaurantCategories = {};
 
   @override
   void initState() {
@@ -62,7 +73,9 @@ class _UserHomeViewState extends State<UserHomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Hello, $userName').h4().semiBold(),
+                    Text('Hello, $userName',
+                        style: TextStyle(color: theme.colorScheme.primary))
+                        .h4().semiBold(),
                     const Text('What would you like to eat?')
                         .muted()
                         .small(),
@@ -85,6 +98,42 @@ class _UserHomeViewState extends State<UserHomeView> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: const Text('Restaurants Near You').semiBold(),
         ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 34,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: _filterCategories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final cat = _filterCategories[index];
+              final isSelected = cat == _selectedCategory;
+              return GestureDetector(
+                onTap: () => setState(() => _selectedCategory = cat),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    cat,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : theme.colorScheme.primary,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
         const SizedBox(height: 12),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
@@ -97,7 +146,7 @@ class _UserHomeViewState extends State<UserHomeView> {
                 debugPrint('[UserHome] Restaurants stream error: ${snapshot.error}');
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (context.mounted) {
-                    showAppToast(context, 'Unable to load restaurants. Please refresh and try again.');
+                    showAppToast(context, 'Unable to load restaurants. Please refresh and try again.', isError: true);
                   }
                 });
                 return Center(
@@ -132,17 +181,25 @@ class _UserHomeViewState extends State<UserHomeView> {
                 );
               }
               final restaurants = snapshot.data!.docs;
-              return ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: restaurants.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final restaurant =
-                      restaurants[index].data() as Map<String, dynamic>;
-                  final restaurantId = restaurants[index].id;
-                  return _buildRestaurantCard(
-                      theme, restaurant, restaurantId);
-                },
+              if (_selectedCategory == 'All') {
+                return ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: restaurants.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final restaurant =
+                        restaurants[index].data() as Map<String, dynamic>;
+                    final restaurantId = restaurants[index].id;
+                    return _buildRestaurantCard(
+                        theme, restaurant, restaurantId);
+                  },
+                );
+              }
+              return _FilteredRestaurantList(
+                restaurants: restaurants,
+                selectedCategory: _selectedCategory,
+                theme: theme,
+                buildCard: _buildRestaurantCard,
               );
             },
           ),
@@ -393,6 +450,73 @@ class _UserHomeViewState extends State<UserHomeView> {
             size: 40, color: theme.colorScheme.primary.withValues(alpha: 0.3)),
       ),
     );
+  }
+}
+
+class _FilteredRestaurantList extends StatelessWidget {
+  final List<QueryDocumentSnapshot> restaurants;
+  final String selectedCategory;
+  final ThemeData theme;
+  final Widget Function(ThemeData, Map<String, dynamic>, String) buildCard;
+
+  const _FilteredRestaurantList({
+    required this.restaurants,
+    required this.selectedCategory,
+    required this.theme,
+    required this.buildCard,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<QueryDocumentSnapshot>>(
+      future: _filterByCategory(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final filtered = snapshot.data!;
+        if (filtered.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(RadixIcons.magnifyingGlass,
+                    size: 48, color: theme.colorScheme.mutedForeground),
+                const SizedBox(height: 16),
+                Text('No restaurants offer $selectedCategory').muted(),
+              ],
+            ),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          itemCount: filtered.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final restaurant = filtered[index].data() as Map<String, dynamic>;
+            final restaurantId = filtered[index].id;
+            return buildCard(theme, restaurant, restaurantId);
+          },
+        );
+      },
+    );
+  }
+
+  Future<List<QueryDocumentSnapshot>> _filterByCategory() async {
+    final results = <QueryDocumentSnapshot>[];
+    for (final doc in restaurants) {
+      final menuSnap = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(doc.id)
+          .collection('menu')
+          .where('category', isEqualTo: selectedCategory)
+          .limit(1)
+          .get();
+      if (menuSnap.docs.isNotEmpty) {
+        results.add(doc);
+      }
+    }
+    return results;
   }
 }
 

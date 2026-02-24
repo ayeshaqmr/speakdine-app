@@ -92,7 +92,7 @@ class _LocationPickerState extends State<LocationPicker> {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (!mounted) return;
-        showAppToast(context, 'Location services are disabled. Please enable them.');
+        showAppToast(context, 'Location services are disabled. Please enable them.', isError: true);
         setState(() => _loadingMyLocation = false);
         return;
       }
@@ -112,7 +112,7 @@ class _LocationPickerState extends State<LocationPicker> {
       }
       if (permission == LocationPermission.denied) {
         if (!mounted) return;
-        showAppToast(context, 'Location permission denied.');
+        showAppToast(context, 'Location permission denied.', isError: true);
         setState(() => _loadingMyLocation = false);
         return;
       }

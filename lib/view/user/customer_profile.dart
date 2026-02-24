@@ -92,7 +92,7 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
         );
 
     if (customerId == null) {
-      if (mounted) showAppToast(context, 'Could not set up payment. Try again.');
+      if (mounted) showAppToast(context, 'Could not set up payment. Try again.', isError: true);
       return;
     }
 
@@ -112,7 +112,7 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
       setState(() => _savedCards.removeWhere((c) => c.id == card.id));
       if (mounted) showAppToast(context, 'Card removed');
     } else {
-      if (mounted) showAppToast(context, 'Failed to remove card. Try again.');
+      if (mounted) showAppToast(context, 'Failed to remove card. Try again.', isError: true);
     }
   }
 
@@ -133,7 +133,7 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
           .update({'photoUrl': url});
       if (mounted) showAppToast(context, 'Photo updated');
     } else {
-      if (mounted) showAppToast(context, 'Photo upload failed. Please try again.');
+      if (mounted) showAppToast(context, 'Photo upload failed. Please try again.', isError: true);
     }
     if (mounted) setState(() => _uploadingPhoto = false);
   }
@@ -159,7 +159,7 @@ class _CustomerProfileViewState extends State<CustomerProfileView> {
       showAppToast(context, 'Profile updated successfully');
     } catch (e) {
       if (!mounted) return;
-      showAppToast(context, 'Something went wrong. Please try again later.');
+      showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
     }
     if (mounted) setState(() => _saving = false);
   }

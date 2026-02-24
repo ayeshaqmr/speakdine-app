@@ -2,7 +2,7 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:speak_dine/utils/toast_helper.dart';
 import 'package:speak_dine/services/image_upload_service.dart';
-import 'package:flutter/material.dart' show FloatingActionButton;
+import 'package:flutter/material.dart' show FloatingActionButton, ListTile, showModalBottomSheet;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -37,7 +37,9 @@ const _menuCategories = [
 ];
 
 class MenuManagementView extends StatefulWidget {
-  const MenuManagementView({super.key});
+  final VoidCallback? onGoToProfile;
+
+  const MenuManagementView({super.key, this.onGoToProfile});
 
   @override
   State<MenuManagementView> createState() => _MenuManagementViewState();
@@ -54,10 +56,18 @@ class _MenuManagementViewState extends State<MenuManagementView> {
     return StreamBuilder<DocumentSnapshot>(
       stream: _firestore.collection('restaurants').doc(user?.uid).snapshots(),
       builder: (context, restaurantSnap) {
-        final isOnboarded =
-            restaurantSnap.data?.get('stripeConnectOnboarded') == true;
+        if (restaurantSnap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-        if (restaurantSnap.hasData && !isOnboarded) {
+        if (restaurantSnap.hasError || !restaurantSnap.hasData) {
+          return _buildMenuContent(theme);
+        }
+
+        final data = restaurantSnap.data?.data() as Map<String, dynamic>?;
+        final isOnboarded = data?['stripeConnectOnboarded'] == true;
+
+        if (!isOnboarded) {
           return _buildConnectGate(theme);
         }
 
@@ -79,9 +89,21 @@ class _MenuManagementViewState extends State<MenuManagementView> {
             const Text('Payment Setup Required').semiBold(),
             const SizedBox(height: 8),
             const Text(
-              'Complete your Stripe payment setup in the Profile tab before adding menu items.',
+              'Complete your Stripe payment setup before adding menu items.',
               textAlign: TextAlign.center,
             ).muted().small(),
+            const SizedBox(height: 20),
+            PrimaryButton(
+              onPressed: widget.onGoToProfile,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(RadixIcons.person, size: 14),
+                  SizedBox(width: 8),
+                  Text('Go to Profile'),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -124,7 +146,7 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                           debugPrint('[MenuManagement] Menu stream error: ${snapshot.error}');
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (context.mounted) {
-                              showAppToast(context, 'Unable to load menu. Please try again.');
+                              showAppToast(context, 'Unable to load menu. Please try again.', isError: true);
                             }
                           });
                           return Center(
@@ -393,25 +415,9 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                   const SizedBox(height: 12),
                   const Text('Category').semiBold().small(),
                   const SizedBox(height: 6),
-                  Select<String>(
-                    value: selectedCategory,
-                    onChanged: (value) {
-                      setDialogState(() => selectedCategory = value);
-                    },
-                    itemBuilder: (context, item) => Text(item),
-                    placeholder: const Text('Select a category'),
-                    popupConstraints: const BoxConstraints(maxHeight: 300),
-                    popup: SelectPopup(
-                      items: SelectItemList(
-                        children: _menuCategories
-                            .map((cat) => SelectItemButton(
-                                  value: cat,
-                                  child: Text(cat),
-                                ))
-                            .toList(),
-                      ),
-                    ),
-                  ),
+                  _buildCategoryPickerTile(theme, selectedCategory, (val) {
+                    setDialogState(() => selectedCategory = val);
+                  }),
                 ],
               ),
             ),
@@ -558,25 +564,9 @@ class _MenuManagementViewState extends State<MenuManagementView> {
                   const SizedBox(height: 12),
                   const Text('Category').semiBold().small(),
                   const SizedBox(height: 6),
-                  Select<String>(
-                    value: selectedCategory,
-                    onChanged: (value) {
-                      setDialogState(() => selectedCategory = value);
-                    },
-                    itemBuilder: (context, item) => Text(item),
-                    placeholder: const Text('Select a category'),
-                    popupConstraints: const BoxConstraints(maxHeight: 300),
-                    popup: SelectPopup(
-                      items: SelectItemList(
-                        children: _menuCategories
-                            .map((cat) => SelectItemButton(
-                                  value: cat,
-                                  child: Text(cat),
-                                ))
-                            .toList(),
-                      ),
-                    ),
-                  ),
+                  _buildCategoryPickerTile(theme, selectedCategory, (val) {
+                    setDialogState(() => selectedCategory = val);
+                  }),
                 ],
               ),
             ),
@@ -623,6 +613,72 @@ class _MenuManagementViewState extends State<MenuManagementView> {
     );
   }
 
+  Widget _buildCategoryPickerTile(ThemeData theme, String? selected, ValueChanged<String> onChanged) {
+    return GestureDetector(
+      onTap: () {
+        showModalBottomSheet<String>(
+          context: context,
+          builder: (sheetCtx) => SafeArea(
+            child: SizedBox(
+              height: 350,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: const Text('Select a category').semiBold(),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _menuCategories.length,
+                      itemBuilder: (_, i) {
+                        final cat = _menuCategories[i];
+                        final isSelected = cat == selected;
+                        return ListTile(
+                          title: Text(cat, style: TextStyle(
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            color: isSelected ? theme.colorScheme.primary : null,
+                          )),
+                          trailing: isSelected ? Icon(RadixIcons.check, color: theme.colorScheme.primary, size: 16) : null,
+                          onTap: () => Navigator.pop(sheetCtx, cat),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ).then((value) {
+          if (value != null) onChanged(value);
+        });
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.border),
+          borderRadius: BorderRadius.circular(theme.radiusMd),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                selected ?? 'Select a category',
+                style: TextStyle(
+                  color: selected != null
+                      ? theme.colorScheme.foreground
+                      : theme.colorScheme.mutedForeground,
+                ),
+              ),
+            ),
+            Icon(RadixIcons.chevronDown, size: 14, color: theme.colorScheme.mutedForeground),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _imagePickerPlaceholder(ThemeData theme) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -638,7 +694,7 @@ class _MenuManagementViewState extends State<MenuManagementView> {
       String name, String description, double price, String category,
       {String? imageUrl}) async {
     if (name.isEmpty) {
-      showAppToast(context, 'Item name is required');
+      showAppToast(context, 'Item name is required', isError: true);
       return;
     }
     try {
@@ -659,7 +715,7 @@ class _MenuManagementViewState extends State<MenuManagementView> {
       showAppToast(context, '$name added to menu');
     } catch (e) {
       if (!mounted) return;
-      showAppToast(context, 'Something went wrong. Please try again later.');
+      showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
     }
   }
 
@@ -684,7 +740,7 @@ class _MenuManagementViewState extends State<MenuManagementView> {
       showAppToast(context, '$name updated');
     } catch (e) {
       if (!mounted) return;
-      showAppToast(context, 'Something went wrong. Please try again later.');
+      showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
     }
   }
 
@@ -719,7 +775,7 @@ class _MenuManagementViewState extends State<MenuManagementView> {
         showAppToast(context, 'Item deleted');
       } catch (e) {
         if (!mounted) return;
-        showAppToast(context, 'Something went wrong. Please try again later.');
+        showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
       }
     }
   }

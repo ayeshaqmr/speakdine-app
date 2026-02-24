@@ -5,6 +5,7 @@ import 'package:speak_dine/services/image_upload_service.dart';
 import 'package:speak_dine/services/payment_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:speak_dine/view/authScreens/login_view.dart';
 
@@ -23,7 +24,8 @@ class RestaurantProfileView extends StatefulWidget {
       _RestaurantProfileViewState();
 }
 
-class _RestaurantProfileViewState extends State<RestaurantProfileView> {
+class _RestaurantProfileViewState extends State<RestaurantProfileView>
+    with WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final user = FirebaseAuth.instance.currentUser;
 
@@ -46,17 +48,28 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadProfile();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _stripeConnectId != null &&
+        !_stripeConnectOnboarded) {
+      _refreshConnectStatus();
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -97,34 +110,37 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
   Future<void> _startConnectOnboarding() async {
     setState(() => _connectLoading = true);
 
-    if (_stripeConnectId != null) {
-      final url = await PaymentService.getOnboardingLink(
-        accountId: _stripeConnectId!,
-      );
-      if (url != null) {
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, webOnlyWindowName: '_self');
+    try {
+      if (_stripeConnectId != null) {
+        final url = await PaymentService.getOnboardingLink(
+          accountId: _stripeConnectId!,
+        );
+        if (url != null) {
+          final uri = Uri.parse(url);
+          await launchUrl(uri,
+              mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
+        } else {
+          if (mounted) showAppToast(context, 'Could not load onboarding. Try again.', isError: true);
         }
       } else {
-        if (mounted) showAppToast(context, 'Could not load onboarding. Try again.');
-      }
-    } else {
-      final result = await PaymentService.createConnectAccount(
-        restaurantId: user?.uid ?? '',
-        email: _emailController.text.trim(),
-        businessName: _nameController.text.trim(),
-      );
-      if (result != null) {
-        _stripeConnectId = result['accountId'];
-        final url = result['onboardingUrl']!;
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, webOnlyWindowName: '_self');
+        final result = await PaymentService.createConnectAccount(
+          restaurantId: user?.uid ?? '',
+          email: _emailController.text.trim(),
+          businessName: _nameController.text.trim(),
+        );
+        if (result != null) {
+          _stripeConnectId = result['accountId'];
+          final url = result['onboardingUrl']!;
+          final uri = Uri.parse(url);
+          await launchUrl(uri,
+              mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
+        } else {
+          if (mounted) showAppToast(context, 'Failed to set up payments. Try again.', isError: true);
         }
-      } else {
-        if (mounted) showAppToast(context, 'Failed to set up payments. Try again.');
       }
+    } catch (e) {
+      debugPrint('[ConnectOnboarding] Error: $e');
+      if (mounted) showAppToast(context, 'Could not open payment setup. Try again.', isError: true);
     }
 
     if (mounted) setState(() => _connectLoading = false);
@@ -147,7 +163,7 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
           .update({'coverImageUrl': url});
       if (mounted) showAppToast(context, 'Cover image updated');
     } else {
-      if (mounted) showAppToast(context, 'Upload failed. Please try again.');
+      if (mounted) showAppToast(context, 'Upload failed. Please try again.', isError: true);
     }
     if (mounted) setState(() => _uploadingCover = false);
   }
@@ -173,7 +189,7 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
       showAppToast(context, 'Profile updated successfully');
     } catch (e) {
       if (!mounted) return;
-      showAppToast(context, 'Something went wrong. Please try again later.');
+      showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
     }
     if (mounted) setState(() => _saving = false);
   }
@@ -356,7 +372,7 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
                 onChanged: (value) => setState(() => _openTime = value),
                 itemBuilder: (context, item) => Text(item),
                 placeholder: const Text('Open time'),
-                popupConstraints: const BoxConstraints(maxHeight: 250),
+                popupConstraints: const BoxConstraints(maxHeight: 200),
                 popup: SelectPopup(
                   items: SelectItemList(
                     children: _hourOptions
@@ -380,7 +396,7 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
                 onChanged: (value) => setState(() => _closeTime = value),
                 itemBuilder: (context, item) => Text(item),
                 placeholder: const Text('Close time'),
-                popupConstraints: const BoxConstraints(maxHeight: 250),
+                popupConstraints: const BoxConstraints(maxHeight: 200),
                 popup: SelectPopup(
                   items: SelectItemList(
                     children: _hourOptions
@@ -450,7 +466,9 @@ class _RestaurantProfileViewState extends State<RestaurantProfileView> {
                   if (url != null) {
                     final uri = Uri.parse(url);
                     if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri, webOnlyWindowName: '_self');
+                      await launchUrl(uri,
+              webOnlyWindowName: kIsWeb ? '_self' : null,
+              mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
                     }
                   }
                 },

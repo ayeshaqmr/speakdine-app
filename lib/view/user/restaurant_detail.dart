@@ -34,6 +34,15 @@ class _RestaurantDetailViewState extends State<RestaurantDetailView> {
     showAppToast(context, '${item['name']} added to cart');
   }
 
+  void _removeFromCart(String itemId) {
+    final items = cartService.cart[widget.restaurantId];
+    if (items == null) return;
+    final index = items.indexWhere((ci) => ci['itemId'] == itemId);
+    if (index < 0) return;
+    setState(() => cartService.decreaseQuantity(widget.restaurantId, index));
+    widget.onCartChanged?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -379,43 +388,68 @@ class _RestaurantDetailViewState extends State<RestaurantDetailView> {
             ),
           ),
           const SizedBox(width: 12),
-          Column(
-            children: [
-              if (quantityInCart > 0)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      'x$quantityInCart',
-                      style: TextStyle(
-                        color: theme.colorScheme.primaryForeground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+          quantityInCart > 0
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _removeFromCart(itemId),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          quantityInCart > 1 ? RadixIcons.minus : RadixIcons.trash,
+                          size: 14,
+                          color: quantityInCart > 1
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.destructive,
+                        ),
                       ),
                     ),
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        '$quantityInCart',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _addToCart(item, itemId),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(RadixIcons.plus,
+                            size: 14, color: theme.colorScheme.primary),
+                      ),
+                    ),
+                  ],
+                )
+              : GestureDetector(
+                  onTap: () => _addToCart(item, itemId),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(RadixIcons.plus,
+                        size: 18, color: theme.colorScheme.primary),
                   ),
                 ),
-              GestureDetector(
-                onTap: () => _addToCart(item, itemId),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(RadixIcons.plus,
-                      size: 18, color: theme.colorScheme.primary),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

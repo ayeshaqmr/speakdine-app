@@ -36,6 +36,9 @@ class CustomerTransactionsView extends StatelessWidget {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return _buildSkeleton();
               }
+              if (snapshot.hasError) {
+                debugPrint('[CustomerTransactions] Error: ${snapshot.error}');
+              }
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                 return Center(
                   child: Column(

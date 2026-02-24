@@ -73,7 +73,7 @@ class _CartViewState extends State<CartView> {
       if (customerLat == null || customerLng == null) {
         if (!mounted) return;
         setState(() => _placingOrder = false);
-        showAppToast(context, 'Please set your delivery location in your profile first.');
+        showAppToast(context, 'Please set your delivery location in your profile first.', isError: true);
         return;
       }
 
@@ -189,10 +189,15 @@ class _CartViewState extends State<CartView> {
               await restaurantOrderRef.delete();
               await customerOrderRef.delete();
               if (mounted) {
-                showAppToast(context, 'Payment setup failed. Total may be too low for online payment. Try Cash on Delivery.');
+                showAppToast(context, 'Payment setup failed. Total may be too low for online payment. Try Cash on Delivery.', isError: true);
               }
               setState(() => _placingOrder = false);
               return;
+            }
+
+            if (payResult.sessionId != null) {
+              await customerOrderRef.update({'stripeSessionId': payResult.sessionId});
+              await restaurantOrderRef.update({'stripeSessionId': payResult.sessionId});
             }
 
             if (payResult.debtRecoveredPaisa > 0) {
@@ -226,11 +231,14 @@ class _CartViewState extends State<CartView> {
               await restaurantOrderRef.delete();
               await customerOrderRef.delete();
               if (mounted) {
-                showAppToast(context, 'Payment setup failed. Total may be too low for online payment. Try Cash on Delivery.');
+                showAppToast(context, 'Payment setup failed. Total may be too low for online payment. Try Cash on Delivery.', isError: true);
               }
               setState(() => _placingOrder = false);
               return;
             }
+
+            await customerOrderRef.update({'stripeSessionId': sessionId});
+            await restaurantOrderRef.update({'stripeSessionId': sessionId});
 
             final platformFee = restaurantTotal * 0.05;
             await _saveTransaction(
@@ -290,7 +298,7 @@ class _CartViewState extends State<CartView> {
               );
             } else {
               if (mounted) {
-                showAppToast(context, 'Card payment failed. Please try another method.');
+                showAppToast(context, 'Card payment failed. Please try another method.', isError: true);
               }
               setState(() => _placingOrder = false);
               return;
@@ -327,7 +335,7 @@ class _CartViewState extends State<CartView> {
               );
             } else {
               if (mounted) {
-                showAppToast(context, 'Card payment failed. Please try another method.');
+                showAppToast(context, 'Card payment failed. Please try another method.', isError: true);
               }
               setState(() => _placingOrder = false);
               return;
@@ -351,7 +359,7 @@ class _CartViewState extends State<CartView> {
     } catch (_) {
       if (!mounted) return;
       showAppToast(
-          context, 'Something went wrong. Please try again later.');
+          context, 'Something went wrong. Please try again later.', isError: true);
     }
 
     if (mounted) setState(() => _placingOrder = false);

@@ -64,7 +64,7 @@ class _OrdersViewState extends State<OrdersView> {
                 debugPrint('[RestaurantOrders] Orders stream error: ${snapshot.error}');
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (context.mounted) {
-                    showAppToast(context, 'Unable to load orders. Please try again.');
+                    showAppToast(context, 'Unable to load orders. Please try again.', isError: true);
                   }
                 });
                 return Center(
@@ -456,7 +456,7 @@ class _OrdersViewState extends State<OrdersView> {
     } catch (e) {
       debugPrint('[OrdersView] Accept error: $e');
       if (!mounted) return;
-      showAppToast(context, 'Something went wrong. Please try again later.');
+      showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
     }
   }
 
@@ -496,7 +496,7 @@ class _OrdersViewState extends State<OrdersView> {
     } catch (e) {
       debugPrint('[OrdersView] Status update error: $e');
       if (!mounted) return;
-      showAppToast(context, 'Something went wrong. Please try again later.');
+      showAppToast(context, 'Something went wrong. Please try again later.', isError: true);
     }
   }
 
