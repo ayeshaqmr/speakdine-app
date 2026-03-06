@@ -23,20 +23,11 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -50,19 +41,48 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyA-18HUCVdJucsyLgqf25ZF5qA8d1Wy8yA',
-    appId: '1:499838907188:web:c9ba290185c49be96e6b61',
-    messagingSenderId: '499838907188',
-    projectId: 'speakdine-8f4e9',
-    authDomain: 'speakdine-8f4e9.firebaseapp.com',
-    storageBucket: 'speakdine-8f4e9.firebasestorage.app',
+    apiKey: 'AIzaSyAhUpLZwaaacW6Q0dH2-hVpXBW8zUusiio',
+    appId: '1:646135588641:web:b5a5e7bbe72cc306718060',
+    messagingSenderId: '646135588641',
+    projectId: 'speakdineapp',
+    authDomain: 'speakdineapp.firebaseapp.com',
+    storageBucket: 'speakdineapp.firebasestorage.app',
+    measurementId: 'G-J19E73WFZ7',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAzoJyBqado0gdhrAxz4yDxABH3jCIaCTw',
-    appId: '1:499838907188:android:d76481cbda2d00e06e6b61',
-    messagingSenderId: '499838907188',
-    projectId: 'speakdine-8f4e9',
-    storageBucket: 'speakdine-8f4e9.firebasestorage.app',
+    apiKey: 'AIzaSyBc1YKB0yv8-ceJksikYKCkHNI_G-PatXk',
+    appId: '1:646135588641:android:71810be62894ab19718060',
+    messagingSenderId: '646135588641',
+    projectId: 'speakdineapp',
+    storageBucket: 'speakdineapp.firebasestorage.app',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyCxqj-kQDxiLJMSo1AXbO4Uq9Mlt5LT2pg',
+    appId: '1:646135588641:ios:d045470a8c2cae35718060',
+    messagingSenderId: '646135588641',
+    projectId: 'speakdineapp',
+    storageBucket: 'speakdineapp.firebasestorage.app',
+    iosBundleId: 'com.speakdine.app.speakdineApp',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyCxqj-kQDxiLJMSo1AXbO4Uq9Mlt5LT2pg',
+    appId: '1:646135588641:ios:d045470a8c2cae35718060',
+    messagingSenderId: '646135588641',
+    projectId: 'speakdineapp',
+    storageBucket: 'speakdineapp.firebasestorage.app',
+    iosBundleId: 'com.speakdine.app.speakdineApp',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyAhUpLZwaaacW6Q0dH2-hVpXBW8zUusiio',
+    appId: '1:646135588641:web:b55a7ade5bf3843a718060',
+    messagingSenderId: '646135588641',
+    projectId: 'speakdineapp',
+    authDomain: 'speakdineapp.firebaseapp.com',
+    storageBucket: 'speakdineapp.firebasestorage.app',
+    measurementId: 'G-NJ53LQFE2D',
   );
 }

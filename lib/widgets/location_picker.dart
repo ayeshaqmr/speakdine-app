@@ -1,16 +1,16 @@
-import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:speak_dine/utils/toast_helper.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart' show RadixIcons;
+import 'package:speakdine_app/utils/toast_helper.dart';
 
 /// Default center: Lahore, Pakistan
 const _defaultLat = 31.5204;
 const _defaultLng = 74.3587;
 
 /// A reusable widget for picking a location on an OpenStreetMap map.
-/// Works inside a dialog or full page.
 class LocationPicker extends StatefulWidget {
   const LocationPicker({
     super.key,
@@ -92,7 +92,7 @@ class _LocationPickerState extends State<LocationPicker> {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (!mounted) return;
-        showAppToast(context, 'Location services are disabled. Please enable them.', isError: true);
+        showAppToast(context, 'Location services are disabled. Please enable them.');
         setState(() => _loadingMyLocation = false);
         return;
       }
@@ -112,7 +112,7 @@ class _LocationPickerState extends State<LocationPicker> {
       }
       if (permission == LocationPermission.denied) {
         if (!mounted) return;
-        showAppToast(context, 'Location permission denied.', isError: true);
+        showAppToast(context, 'Location permission denied.');
         setState(() => _loadingMyLocation = false);
         return;
       }
@@ -168,7 +168,7 @@ class _LocationPickerState extends State<LocationPicker> {
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.speakdine.app',
+                  userAgentPackageName: 'com.speakdine_app',
                 ),
                 MarkerLayer(
                   markers: [
@@ -196,12 +196,11 @@ class _LocationPickerState extends State<LocationPicker> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: primary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -217,42 +216,47 @@ class _LocationPickerState extends State<LocationPicker> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-            ).muted().small(),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+            ),
           ),
         const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
-              child: OutlineButton(
+              child: OutlinedButton(
                 onPressed: _loadingMyLocation ? null : _useMyLocation,
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
                 child: _loadingMyLocation
-                    ? Center(
+                    ? const Center(
                         child: SizedBox.square(
                           dimension: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: primary,
                           ),
                         ),
                       )
-                    : FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(RadixIcons.crosshair1, size: 16, color: primary),
-                            const SizedBox(width: 8),
-                            const Text('Use My Location'),
-                          ],
-                        ),
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(RadixIcons.crosshair1, size: 16, color: primary),
+                          const SizedBox(width: 8),
+                          const Text('My Location'),
+                        ],
                       ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: PrimaryButton(
+              child: FilledButton(
                 onPressed: _confirmLocation,
-                child: const Text('Confirm Location'),
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('Confirm'),
               ),
             ),
           ],

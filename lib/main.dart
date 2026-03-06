@@ -1,13 +1,18 @@
-import 'package:shadcn_flutter/shadcn_flutter.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:speak_dine/firebase_options.dart';
-import 'package:speak_dine/view/splash_screen.dart';
+import 'firebase_options.dart';
+import 'core/routes/app_routes.dart';
+import 'providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  final themeService = ThemeService();
+  await themeService.init();
+  
   runApp(const SpeakDine());
 }
 
@@ -16,19 +21,32 @@ class SpeakDine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ShadcnApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorSchemes.lightZinc.rose.copyWith(
-          background: () => const Color(0xFFFFF1F2),
-          primaryForeground: () => Colors.white,
-          destructiveForeground: () => Colors.white,
-        ),
-        radius: 0.5,
-        scaling: 1,
-        typography: const Typography.geist(),
-      ),
-      home: const SplashView(),
+    return ListenableBuilder(
+      listenable: ThemeService(),
+      builder: (context, child) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'SPEAK DINE',
+          theme: ThemeService().themeData,
+          initialRoute: AppRoutes.splash,
+          routes: AppRoutes.routes,
+          builder: (context, widget) {
+            // Global Responsive Wrapper
+            return Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Colors.grey.withValues(alpha: 0.2), width: 1),
+                    right: BorderSide(color: Colors.grey.withValues(alpha: 0.2), width: 1),
+                  )
+                ),
+                child: widget!,
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

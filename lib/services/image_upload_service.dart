@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:speak_dine/config/api_keys.dart';
 
 class ImageUploadService {
   static final _picker = ImagePicker();
+  static const String imgbbApiKey = ''; // Set this in AppConstants or as environment variable
 
   static Future<XFile?> pickImage() async {
     return _picker.pickImage(

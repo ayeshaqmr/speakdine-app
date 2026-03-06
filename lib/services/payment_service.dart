@@ -5,35 +5,15 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:speak_dine/config/api_keys.dart';
+import 'package:speakdine_app/core/constants/app_constants.dart';
 
-Future<void> _openUrl(Uri uri) async {
-  if (kIsWeb) {
-    await launchUrl(uri, webOnlyWindowName: '_self');
-  } else {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+String? _getAppBaseUrl() {
+  if (!kIsWeb) return null;
+  try {
+    return Uri.base.origin;
+  } catch (_) {
+    return null;
   }
-}
-
-const _webFallbackUrl = 'https://speakdine-8f4e9.web.app';
-const _mobileDeepLinkBase = 'speakdine://callback';
-
-String _getAppBaseUrl() {
-  if (kIsWeb) {
-    try {
-      return Uri.base.origin;
-    } catch (_) {
-      return _webFallbackUrl;
-    }
-  }
-  return _webFallbackUrl;
-}
-
-String _getConnectReturnUrl() {
-  if (kIsWeb) {
-    return _getAppBaseUrl();
-  }
-  return _mobileDeepLinkBase;
 }
 
 class SavedCard {
@@ -59,7 +39,7 @@ class PaymentService {
       String path, Map<String, dynamic> body) async {
     try {
       final response = await http.post(
-        Uri.parse('$stripeServerUrl$path'),
+        Uri.parse('${AppConstants.apiBaseUrl}$path'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
       );
@@ -136,7 +116,10 @@ class PaymentService {
     final sessionId = result['sessionId'] as String?;
 
     if (url != null) {
-      await _openUrl(Uri.parse(url));
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, webOnlyWindowName: '_self');
+      }
     }
 
     return sessionId;
@@ -158,8 +141,11 @@ class PaymentService {
 
     final url = result['url'] as String?;
     if (url != null) {
-      await _openUrl(Uri.parse(url));
-      return true;
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, webOnlyWindowName: '_self');
+        return true;
+      }
     }
 
     return false;
@@ -229,7 +215,8 @@ class PaymentService {
       'email': email,
       'businessName': businessName,
     };
-    body['appBaseUrl'] = _getConnectReturnUrl();
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
 
     final result = await _post('/create-connect-account', body);
     if (result == null) return null;
@@ -251,7 +238,8 @@ class PaymentService {
     required String accountId,
   }) async {
     final body = <String, dynamic>{'accountId': accountId};
-    body['appBaseUrl'] = _getConnectReturnUrl();
+    final appUrl = _getAppBaseUrl();
+    if (appUrl != null) body['appBaseUrl'] = appUrl;
 
     final result = await _post('/connect-onboarding-link', body);
     return result?['onboardingUrl'] as String?;
@@ -278,14 +266,6 @@ class PaymentService {
     }
 
     return isReady;
-  }
-
-  /// Verifies whether a Stripe Checkout session has been paid.
-  static Future<bool> verifyCheckoutSession(String sessionId) async {
-    final result = await _post('/verify-checkout-session', {
-      'sessionId': sessionId,
-    });
-    return result?['paid'] == true;
   }
 
   /// Creates a checkout session with split payment (5% platform fee + COD debt recovery).
@@ -321,7 +301,10 @@ class PaymentService {
     final sessionId = result['sessionId'] as String?;
 
     if (url != null) {
-      await _openUrl(Uri.parse(url));
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, webOnlyWindowName: '_self');
+      }
     }
 
     return ConnectedPaymentResult(

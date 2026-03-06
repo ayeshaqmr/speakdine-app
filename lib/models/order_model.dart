@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:speak_dine/models/menu_item.dart';
+import 'package:speakdine_app/models/menu_item_model.dart';
 
 enum OrderStatus { pending, preparing, ready, delivered, cancelled }
 
@@ -40,10 +40,11 @@ class OrderModel {
     );
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toJson(String restaurantId) {
     return {
       'id': id,
       'user_id': userId,
+      'restaurant_id': restaurantId,
       'user_name': userName,
       'items': items.map((item) => item.toJson()).toList(),
       'total_amount': totalAmount,

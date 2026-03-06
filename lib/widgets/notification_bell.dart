@@ -1,7 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shadcn_flutter/shadcn_flutter.dart';
-import 'package:speak_dine/services/notification_service.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart' show RadixIcons;
+import 'package:speakdine_app/services/notification_service.dart';
 
 class NotificationBell extends StatefulWidget {
   const NotificationBell({super.key});
@@ -55,13 +56,13 @@ class _NotificationBellState extends State<NotificationBell> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: currentTheme.colorScheme.destructive,
+                      color: currentTheme.colorScheme.error,
                       shape: BoxShape.circle,
                     ),
                     child: Text(
                       count > 99 ? '99+' : '$count',
                       style: TextStyle(
-                        color: currentTheme.colorScheme.background,
+                        color: currentTheme.colorScheme.surface,
                         fontSize: 9,
                         fontWeight: FontWeight.bold,
                       ),
@@ -125,7 +126,7 @@ class _NotificationListDialog extends StatelessWidget {
               return Center(
                 child: Text(
                   'Failed to load notifications',
-                  style: TextStyle(color: theme.colorScheme.destructive),
+                  style: TextStyle(color: theme.colorScheme.error),
                 ),
               );
             }
@@ -139,13 +140,13 @@ class _NotificationListDialog extends StatelessWidget {
                     Icon(
                       RadixIcons.bell,
                       size: 48,
-                      color: theme.colorScheme.mutedForeground,
+                      color: theme.disabledColor,
                     ),
                     const SizedBox(height: 12),
                     Text(
                       'No notifications yet',
                       style: TextStyle(
-                        color: theme.colorScheme.mutedForeground,
+                        color: theme.disabledColor,
                       ),
                     ),
                   ],
@@ -238,7 +239,7 @@ class _NotificationTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                   Text(
                     title,
                     style: TextStyle(
                       fontWeight: read ? FontWeight.normal : FontWeight.w600,
@@ -249,7 +250,7 @@ class _NotificationTile extends StatelessWidget {
                     message,
                     style: TextStyle(
                       fontSize: 13,
-                      color: theme.colorScheme.mutedForeground,
+                      color: theme.hintColor,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -257,7 +258,7 @@ class _NotificationTile extends StatelessWidget {
                     _timeAgo(createdAt),
                     style: TextStyle(
                       fontSize: 11,
-                      color: theme.colorScheme.mutedForeground,
+                      color: theme.hintColor,
                     ),
                   ),
                 ],
