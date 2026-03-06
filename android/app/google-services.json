@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "499838907188",
-    "project_id": "speakdine-8f4e9",
-    "storage_bucket": "speakdine-8f4e9.firebasestorage.app"
+    "project_number": "709917300699",
+    "project_id": "speak-dine-1a95b",
+    "storage_bucket": "speak-dine-1a95b.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:499838907188:android:d76481cbda2d00e06e6b61",
+        "mobilesdk_app_id": "1:709917300699:android:c254282978d0a46f9a79fe",
         "android_client_info": {
-          "package_name": "com.example.speak_dine"
+          "package_name": "com.speakdine.app.speakdine_app"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAzoJyBqado0gdhrAxz4yDxABH3jCIaCTw"
+          "current_key": "AIzaSyCx8-2gjmCADQKL-RxNHhRrFZ_DLStG_wM"
         }
       ],
       "services": {
