@@ -41,48 +41,51 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyAhUpLZwaaacW6Q0dH2-hVpXBW8zUusiio',
-    appId: '1:646135588641:web:b5a5e7bbe72cc306718060',
-    messagingSenderId: '646135588641',
-    projectId: 'speakdineapp',
-    authDomain: 'speakdineapp.firebaseapp.com',
-    storageBucket: 'speakdineapp.firebasestorage.app',
-    measurementId: 'G-J19E73WFZ7',
+    apiKey: 'AIzaSyAkf7MZtMCJ6-8XFAEaFYvnG79bFNTYQAE',
+    appId: '1:709917300699:web:8b5cd28143aad2499a79fe',
+    messagingSenderId: '709917300699',
+    projectId: 'speak-dine-1a95b',
+    authDomain: 'speak-dine-1a95b.firebaseapp.com',
+    storageBucket: 'speak-dine-1a95b.firebasestorage.app',
+    measurementId: 'G-MJ892M5WP9',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBc1YKB0yv8-ceJksikYKCkHNI_G-PatXk',
-    appId: '1:646135588641:android:71810be62894ab19718060',
-    messagingSenderId: '646135588641',
-    projectId: 'speakdineapp',
-    storageBucket: 'speakdineapp.firebasestorage.app',
+    apiKey: 'AIzaSyCx8-2gjmCADQKL-RxNHhRrFZ_DLStG_wM',
+    appId: '1:709917300699:android:c254282978d0a46f9a79fe',
+    messagingSenderId: '709917300699',
+    projectId: 'speak-dine-1a95b',
+    storageBucket: 'speak-dine-1a95b.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCxqj-kQDxiLJMSo1AXbO4Uq9Mlt5LT2pg',
-    appId: '1:646135588641:ios:d045470a8c2cae35718060',
-    messagingSenderId: '646135588641',
-    projectId: 'speakdineapp',
-    storageBucket: 'speakdineapp.firebasestorage.app',
+    apiKey: 'AIzaSyBIgmb0WCxv52ErrqNArXDnY6l9Qq9ulkE',
+    appId: '1:709917300699:ios:6a21f807c29bcd3e9a79fe',
+    messagingSenderId: '709917300699',
+    projectId: 'speak-dine-1a95b',
+    storageBucket: 'speak-dine-1a95b.firebasestorage.app',
+    iosClientId: '709917300699-iaqrj50fgr7916u8hjo8i3g9cnqnpua1.apps.googleusercontent.com',
     iosBundleId: 'com.speakdine.app.speakdineApp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCxqj-kQDxiLJMSo1AXbO4Uq9Mlt5LT2pg',
-    appId: '1:646135588641:ios:d045470a8c2cae35718060',
-    messagingSenderId: '646135588641',
-    projectId: 'speakdineapp',
-    storageBucket: 'speakdineapp.firebasestorage.app',
+    apiKey: 'AIzaSyBIgmb0WCxv52ErrqNArXDnY6l9Qq9ulkE',
+    appId: '1:709917300699:ios:6a21f807c29bcd3e9a79fe',
+    messagingSenderId: '709917300699',
+    projectId: 'speak-dine-1a95b',
+    storageBucket: 'speak-dine-1a95b.firebasestorage.app',
+    iosClientId: '709917300699-iaqrj50fgr7916u8hjo8i3g9cnqnpua1.apps.googleusercontent.com',
     iosBundleId: 'com.speakdine.app.speakdineApp',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyAhUpLZwaaacW6Q0dH2-hVpXBW8zUusiio',
-    appId: '1:646135588641:web:b55a7ade5bf3843a718060',
-    messagingSenderId: '646135588641',
-    projectId: 'speakdineapp',
-    authDomain: 'speakdineapp.firebaseapp.com',
-    storageBucket: 'speakdineapp.firebasestorage.app',
-    measurementId: 'G-NJ53LQFE2D',
+    apiKey: 'AIzaSyAkf7MZtMCJ6-8XFAEaFYvnG79bFNTYQAE',
+    appId: '1:709917300699:web:f3faaebbbde3ce579a79fe',
+    messagingSenderId: '709917300699',
+    projectId: 'speak-dine-1a95b',
+    authDomain: 'speak-dine-1a95b.firebaseapp.com',
+    storageBucket: 'speak-dine-1a95b.firebasestorage.app',
+    measurementId: 'G-WS0ETEQ6X3',
   );
+
 }
