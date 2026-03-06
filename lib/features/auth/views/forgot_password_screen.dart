@@ -6,6 +6,7 @@ import 'package:speakdine_app/core/theme/color_ext.dart';
 import 'package:speakdine_app/services/auth_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:speakdine_app/widgets/password_strength_indicator.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   final String userType;
@@ -186,8 +187,13 @@ class _ForgotPasswordViewState extends State<ForgotPasswordScreen> with SingleTi
       return;
     }
 
-    if (_newPasswordController.text.length < 6) {
-      setState(() => _errorMessage = 'Password must be at least 6 characters');
+    if (_newPasswordController.text.length < 8) {
+      setState(() => _errorMessage = 'Password must be at least 8 characters');
+      return;
+    }
+    final strengthError = validatePasswordStrength(_newPasswordController.text);
+    if (strengthError != null) {
+      setState(() => _errorMessage = strengthError);
       return;
     }
 
@@ -654,6 +660,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordScreen> with SingleTi
           ),
           hasText: _newPasswordHasText,
         ),
+        const SizedBox(height: 4),
+        PasswordStrengthIndicator(controller: _newPasswordController),
         const SizedBox(height: 18),
         _inputField(
           controller: _confirmPasswordController,

@@ -8,6 +8,7 @@ import 'package:speakdine_app/widgets/premium_snackbar.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:speakdine_app/services/auth_service.dart';
+import 'package:speakdine_app/widgets/password_strength_indicator.dart';
 
 import 'package:speakdine_app/features/auth/views/login_screen.dart';
 
@@ -715,10 +716,11 @@ class _CustomerSignupViewState extends State<SignupScreen> with SingleTickerProv
               ),
               validator: (val) {
                 if (val == null || val.isEmpty) return "Required";
-                if (val.length < 6) return "Min 6 characters";
-                return null;
+                return validatePasswordStrength(val);
               },
             ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
+            const SizedBox(height: 4),
+            PasswordStrengthIndicator(controller: _passwordController),
             const SizedBox(height: 18),
             _signupInputField(
               controller: _confirmPasswordController,

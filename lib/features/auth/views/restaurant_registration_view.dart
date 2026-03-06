@@ -13,6 +13,7 @@ import 'package:speakdine_app/core/utils/pakistani_locations.dart';
 import 'package:speakdine_app/widgets/premium_snackbar.dart';
 import 'package:speakdine_app/widgets/time_picker_widget.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speakdine_app/widgets/password_strength_indicator.dart';
 
 class RestaurantRegistrationView extends StatefulWidget {
   const RestaurantRegistrationView({super.key});
@@ -128,8 +129,9 @@ class _RestaurantRegistrationViewState extends State<RestaurantRegistrationView>
          return;
        }
     } else if (_currentStep == 6) { // Set Password
-      if (_passwordController.text.length < 6) {
-        PremiumSnackbar.show(context, message: "Password must be at least 6 characters", isError: true);
+      final strengthError = validatePasswordStrength(_passwordController.text);
+      if (strengthError != null) {
+        PremiumSnackbar.show(context, message: strengthError, isError: true);
         _triggerShake();
         return;
       }
@@ -580,6 +582,8 @@ class _RestaurantRegistrationViewState extends State<RestaurantRegistrationView>
           Text("Secure Account", style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w800, color: colorExt.primaryText)),
           const SizedBox(height: 32),
           _regPasswordField(_passwordController, "Set Password", isObscured: _obscurePassword, toggle: () => setState(() => _obscurePassword = !_obscurePassword)),
+          const SizedBox(height: 8),
+          PasswordStrengthIndicator(controller: _passwordController),
           const SizedBox(height: 16),
           _regPasswordField(_confirmPasswordController, "Confirm Password", isObscured: _obscureConfirmPassword, toggle: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword)),
           const SizedBox(height: 40),
