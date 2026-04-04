@@ -16,6 +16,7 @@ import 'package:speak_dine/services/login_lookup_sync.dart';
 import 'package:speak_dine/utils/google_sign_in_guard.dart';
 import 'package:speak_dine/widgets/google_logo_mark.dart';
 import 'package:speak_dine/widgets/keyboard_friendly.dart';
+import 'package:speak_dine/widgets/unverified_email_dialog.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -80,10 +81,10 @@ class _LoginViewState extends State<LoginView> {
         return;
       }
 
-      // Gate routing until email is verified.
+      // Gate routing until email is verified (dialog: resend email, then sign out).
       final emailVerified = credential.user?.emailVerified ?? false;
       if (!emailVerified) {
-        _showMessage('Please verify your email before logging in.');
+        if (mounted) await showUnverifiedEmailDialog(context);
         await _auth.signOut();
         return;
       }
@@ -119,7 +120,7 @@ class _LoginViewState extends State<LoginView> {
 
       // Gate routing until email is verified.
       if (!user.emailVerified) {
-        _showMessage('Please verify your email before logging in.');
+        if (mounted) await showUnverifiedEmailDialog(context);
         await _auth.signOut();
         return;
       }
